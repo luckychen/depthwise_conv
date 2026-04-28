@@ -1,0 +1,194 @@
+/home/ava/chenchon/miniforge3/envs/chConv/lib/python3.12/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+======================================================================
+RepLKNet-31B Benchmark (FP16 channels_last)
+======================================================================
+Device: NVIDIA GB10
+PyTorch: 2.11.0+cu128, CuDNN: 91900
+
+======================================================================
+Config 1: Custom depthwise kernels (eager)
+======================================================================
+drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+WARNING: Checkpoint not found at /home/ava/chenchon/depthwise_conv/replknet/RepLKNet-31B_ImageNet-1K_224.pth
+Running with random weights (latency benchmark only)
+W0426 18:28:34.742000 1419737 site-packages/torch/_inductor/utils.py:1731] [0/0] Not enough SMs to use max_autotune_gemm mode
+  Replaced stages.0.blocks.0.large_kernel.lkb_reparam: 128ch, 31x31 -> NHWCDepthwise31x31_128
+  Replaced stages.0.blocks.2.large_kernel.lkb_reparam: 128ch, 31x31 -> NHWCDepthwise31x31_128
+  Replaced stages.1.blocks.0.large_kernel.lkb_reparam: 256ch, 29x29 -> NHWCDepthwise29x29_256
+  Replaced stages.1.blocks.2.large_kernel.lkb_reparam: 256ch, 29x29 -> NHWCDepthwise29x29_256
+  Replaced stages.2.blocks.0.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.2.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.4.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.6.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.8.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.10.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.12.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.14.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.16.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.18.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.20.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.22.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.24.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.26.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.28.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.30.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.32.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+  Replaced stages.2.blocks.34.large_kernel.lkb_reparam: 512ch, 27x27 -> NHWCDepthwise27x27_512
+Replaced 22 depthwise conv(s) with NHWC custom kernels
+  7.80 +/- 0.29 ms  (min 7.26, max 8.34)
+
+  Depthwise convolution breakdown:
+  Stage    Kernel   Ch     Count     Per-call      Total
+  ----------------------------------------------------
+  -1       3x3     128    2          0.263 ms    0.773 ms
+  -1       3x3     256    1          0.192 ms    0.192 ms
+  -1       3x3     512    1          0.072 ms    0.072 ms
+  -1       3x3     1024   1          0.027 ms    0.027 ms
+  0        31x31    128    2          0.428 ms    0.856 ms
+  1        29x29    256    2          0.268 ms    0.538 ms
+  2        27x27    512    18         0.177 ms    3.005 ms
+  3        13x13    1024   2          0.190 ms    0.379 ms
+  ----------------------------------------------------
+  Total depthwise:                                      5.843 ms
+
+======================================================================
+Config 2: Custom depthwise + torch.compile
+======================================================================
+drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+WARNING: Checkpoint not found at /home/ava/chenchon/depthwise_conv/replknet/RepLKNet-31B_ImageNet-1K_224.pth
+Running with random weights (latency benchmark only)
+  4.67 +/- 0.27 ms  (min 4.33, max 5.13)
+
+======================================================================
+Config 3: CuDNN (eager)
+======================================================================
+drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+WARNING: Checkpoint not found at /home/ava/chenchon/depthwise_conv/replknet/RepLKNet-31B_ImageNet-1K_224.pth
+Running with random weights (latency benchmark only)
+  18.40 +/- 0.40 ms  (min 17.63, max 19.07)
+
+  Depthwise convolution breakdown:
+  Stage    Kernel   Ch     Count     Per-call      Total
+  ----------------------------------------------------
+  -1       3x3     128    2          0.165 ms    0.575 ms
+  -1       3x3     256    1          0.095 ms    0.095 ms
+  -1       3x3     512    1          0.061 ms    0.061 ms
+  -1       3x3     1024   1          0.027 ms    0.027 ms
+  0        31x31    128    2          2.868 ms    5.653 ms
+  1        29x29    256    2          1.444 ms    2.724 ms
+  2        27x27    512    18         0.344 ms    6.562 ms
+  3        13x13    1024   2          0.094 ms    0.188 ms
+  ----------------------------------------------------
+  Total depthwise:                                     15.886 ms
+
+======================================================================
+Config 4: CuDNN + torch.compile
+======================================================================
+drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+WARNING: Checkpoint not found at /home/ava/chenchon/depthwise_conv/replknet/RepLKNet-31B_ImageNet-1K_224.pth
+Running with random weights (latency benchmark only)
+  15.27 +/- 0.37 ms  (min 14.60, max 15.99)
+
+======================================================================
+SUMMARY (all FP16 NHWC channels_last)
+======================================================================
+Configuration                          Latency   vs CuDNN   DW total     Non-DW
+----------------------------------------------------------------------
+CuDNN eager                            18.40 ms      1.00x    15.89 ms     2.51 ms
+CuDNN+compile                          15.27 ms      1.20x
+custom eager                            7.80 ms      2.36x     5.84 ms     1.96 ms
+custom+compile                          4.67 ms      3.94x
+======================================================================

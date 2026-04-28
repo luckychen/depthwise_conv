@@ -6,9 +6,16 @@ Custom CUDA kernels for large-kernel (7×7 to 31×31) depthwise convolution that
 
 ## Hardware Requirements
 
-- NVIDIA GPU with SM >= 8.0 (tested on SM 8.9)
-- CUDA 12.x toolkit (tested with CUDA 12.4 and 12.9)
+- NVIDIA GPU with SM >= 8.0
+- CUDA 12.x+ toolkit
 - Sufficient GPU memory (16 GB+ recommended)
+
+### Tested Platforms
+
+| Platform | GPU | SM | CUDA | Memory |
+|----------|-----|----|------|--------|
+| RTX 6000 Ada workstation | RTX 6000 Ada | SM 8.9 | 12.4 / 12.9 | 48 GB GDDR6 |
+| DGX Spark (SPARK branch) | NVIDIA GB10 | SM 12.1 | 13.0 | 128.5 GB unified |
 
 ## Software Requirements
 
@@ -22,8 +29,6 @@ conda activate cuda
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 
 # Required: ninja for JIT compilation of CUDA kernels
-# The CUDA kernels are compiled at runtime via torch.utils.cpp_extension,
-# which requires ninja to be installed and on your PATH.
 pip install ninja
 
 # Required for RepLKNet only
@@ -33,24 +38,24 @@ pip install timm
 pip install datasets tqdm
 ```
 
-**Important:** Make sure `ninja` is on your `PATH`. If you are using conda, activate the environment before running benchmarks so that `ninja` from the conda env is found. You can verify with:
+**Important:** Make sure `ninja` is on your `PATH`:
 ```bash
 which ninja  # should point to your conda env's bin/ninja
 ```
 
 ### Package versions used in our experiments
 
-| Package | Version |
-|---------|---------|
-| Python | 3.10 |
-| PyTorch | 2.9.1+cu128 |
-| torchvision | 0.24.1+cu128 |
-| cuDNN | 9.10.2 |
-| ninja | 1.13.0 |
-| timm | 1.0.24 |
-| datasets | 4.4.2 |
-| numpy | 2.2.6 |
-| Pillow | 12.1.0 |
+| Package | RTX 6000 Ada | DGX Spark |
+|---------|-------------|-----------|
+| Python | 3.10 | 3.12.13 |
+| PyTorch | 2.9.1+cu128 | 2.11.0+cu128 |
+| torchvision | 0.24.1+cu128 | 0.26.0+cu128 |
+| cuDNN | 9.10.2 | 9.19.0 |
+| ninja | 1.13.0 | 1.13.0 |
+| timm | 1.0.24 | 1.0.26 |
+| datasets | 4.4.2 | — |
+| numpy | 2.2.6 | 2.4.3 |
+| Pillow | 12.1.0 | 12.1.1 |
 
 ## Quick Start (Latency Only, No Data Required)
 
@@ -87,47 +92,87 @@ git clone https://github.com/DingXiaoH/RepLKNet-pytorch
 python benchmark.py --skip_verify --num_runs 20 --device cuda:0
 ```
 
+## Models
+
+### ConvMixer
+
+| Model | Depthwise Kernel | Channels | Depth | Params |
+|-------|------------------|----------|-------|--------|
+| ConvMixer-1536/20 | 9×9 | 1536 | 20 | 52M |
+| ConvMixer-768/32 | 7×7 | 768 | 32 | 21M |
+
+**ConvMixer CLI options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | `1536_20` | ConvMixer variant: `1536_20` or `768_32` |
+| `--device` | `cuda:0` | CUDA device |
+| `--num_runs` | `500` | Number of timed inference iterations |
+| `--skip_accuracy` | off | Skip ImageNet accuracy validation (latency only) |
+| `--baselines` | off | Include MobileNetV3, EfficientNet-B0, ResNet-152 |
+| `--data_dir` | `./data/imagenet` | HuggingFace ImageNet cache directory |
+
+### RepLKNet-31B
+
+Custom kernels cover stages 0-2. Stage 3 uses PyTorch native (cuDNN is efficient for 13×13 at 7×7 spatial).
+
+| Stage | Kernel Size | Channels | Spatial | Custom Kernel | File |
+|-------|-------------|----------|---------|---------------|------|
+| 0 | 31×31 | 128 | 56×56 | Yes | `depthWise_ch_128_k_31_t_56_half_forward.cu` |
+| 1 | 29×29 | 256 | 28×28 | Yes | `depthWise_ch_256_k_29_t_28_half_forward.cu` |
+| 2 | 27×27 | 512 | 14×14 | Yes | `depthWise_ch_512_k_27_t_14_half_forward.cu` |
+| 3 | 13×13 | 1024 | 7×7 | No (PyTorch native) | — |
+
+**Setup:** Clone the RepLKNet model repo (`git clone https://github.com/DingXiaoH/RepLKNet-pytorch`) and install `timm`. The benchmark imports `create_RepLKNet31B` from `replknet/RepLKNet-pytorch/replknet.py`. Download checkpoint from Google Drive and place as `replknet/RepLKNet-31B_ImageNet-1K_224.pth`. Without checkpoint, benchmark runs with random weights (latency still valid).
+
+**RepLKNet CLI options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--device` | `cuda:0` | CUDA device |
+| `--num_runs` | `100` | Number of timed inference iterations |
+| `--warmup` | `50` | Number of warmup iterations |
+| `--per_layer` | off | Profile each depthwise layer individually |
+| `--skip_verify` | off | Skip output verification against cuDNN reference |
+
+## Benchmark Configurations
+
+Each benchmark creates **4 configurations** (all FP16 channels_last):
+
+1. **CuDNN eager** — standard PyTorch with cuDNN backend
+2. **CuDNN + compile** — standard PyTorch + `torch.compile`
+3. **Custom eager** — depthwise convolutions replaced with custom CUDA kernels
+4. **Custom + compile** — custom kernels + `torch.compile`
+
+Comparisons are **apple-to-apple**: eager vs eager, compile vs compile.
+
+## Additional Baselines (SPARK branch)
+
+Scripts at repo root for cross-method comparison:
+
+- **`benchmark_cudnn_layouts.py`** — Tests cuDNN depthwise conv with both NCHW and NHWC layouts. Reports cuDNN's best achievable latency per configuration.
+- **`benchmark_triton.py`** — Triton depthwise conv kernel with auto-tuning (BLOCK_C=32/64/128, num_warps=4/8). Correctness-verified against PyTorch reference.
+
 ## ImageNet Accuracy Validation (Optional)
 
-Accuracy validation requires the ImageNet-1K validation set (50,000 images). The scripts use the **HuggingFace `datasets` library** to download and cache the data.
+Accuracy validation requires the ImageNet-1K validation set (50,000 images) via HuggingFace `datasets`:
 
-### How ImageNet is loaded
-
-The ConvMixer benchmark loads ImageNet via:
 ```python
 from datasets import load_dataset
 dataset = load_dataset('ILSVRC/imagenet-1k', split='validation', cache_dir=data_dir)
 ```
 
-The default cache directory is `./data/imagenet` (relative to the benchmark script). You can change it with `--data_dir`:
-```bash
-python benchmark.py --model 1536_20 --data_dir /path/to/imagenet/cache --device cuda:0
-```
-
-### HuggingFace access
-
-You need a HuggingFace account with access to the [ILSVRC/imagenet-1k](https://huggingface.co/datasets/ILSVRC/imagenet-1k) dataset:
-1. Create an account at https://huggingface.co
-2. Accept the dataset terms at https://huggingface.co/datasets/ILSVRC/imagenet-1k
-3. Log in via CLI: `huggingface-cli login`
-
-The first download will take some time (~150 GB cache). Subsequent runs use the local cache.
-
-### Running accuracy validation
+Prerequisites:
+1. HuggingFace account with access to [ILSVRC/imagenet-1k](https://huggingface.co/datasets/ILSVRC/imagenet-1k)
+2. `huggingface-cli login` to authenticate
 
 ```bash
 cd convmixer
 python benchmark.py --model 1536_20 --device cuda:0 --num_runs 500
 
-# With baselines (MobileNetV3, EfficientNet-B0, ResNet-152):
+# With baselines:
 python benchmark.py --model 1536_20 --baselines --device cuda:0
 ```
-
-## Detailed Experiment Instructions
-
-See the per-experiment READMEs for full details:
-- [convmixer/README.md](convmixer/README.md) — ConvMixer-1536/20 and ConvMixer-768/32
-- [replknet/README.md](replknet/README.md) — RepLKNet-31B
 
 ## File Structure
 
@@ -155,22 +200,28 @@ replknet/
     ├── depthWise128_56_k31.hpp
     ├── depthWise256_28_k29.hpp
     └── depthWise512_14_k27.hpp
+
+benchmark_cudnn_layouts.py    # cuDNN NCHW vs NHWC baseline
+benchmark_triton.py           # Triton depthwise conv baseline
+results/                      # Benchmark output files
 ```
 
 ## How CUDA Kernels Are Compiled
 
-The custom CUDA kernels are **JIT-compiled at runtime** using `torch.utils.cpp_extension.load()`. This means:
+The custom CUDA kernels are **JIT-compiled at runtime** using `torch.utils.cpp_extension.load()`:
 
 1. **No pre-compilation step needed** — just run the Python scripts
-2. **First run is slow** (~30-60s) while kernels compile; compiled binaries are cached in `~/.cache/torch_extensions/`
-3. **Requires `ninja`** build system on PATH (see installation above)
-4. **Requires CUDA toolkit** headers (usually installed with CUDA toolkit or PyTorch)
+2. **First run is slow** (~30-60s) while kernels compile; cached in `~/.cache/torch_extensions/`
+3. **Requires `ninja`** build system on PATH
+4. **Requires CUDA toolkit** headers
 
-If JIT compilation fails, you will see a warning like:
-```
-Failed to load custom kernels: Ninja is required to load C++ extensions
-```
-This means `ninja` is not on your PATH. Make sure your conda environment is activated.
+## Code Walkthrough
+
+- **`convmixer/convmixer.py`** — Model definition. `load_pretrained()` loads checkpoint from `checkpoints/` dir.
+- **`convmixer/kernels/depthwise_torch_ops.py`** — Registers custom ops via `torch.library.define`/`impl`/`register_fake`. `replace_depthwise_convs()` swaps `nn.Conv2d` depthwise layers with `CustomDepthwiseConv2d`. Weight conversion: `[C,1,K,K]` → `[K,K,C]`.
+- **`convmixer/kernels/depthwise_integration.cu`** — CUDA kernels. Three variants: 32×32/768ch/7×7 (1024 threads, weights-only shmem), 32×32/1536ch/9×9 (512 threads, cp.async double-buffer), 16×16/1536ch/9×9.
+- **`replknet/kernels/depthwise_replknet_nhwc_ops.py`** — torch.library registration for RepLKNet. `replace_replknet_depthwise_nhwc()` replaces depthwise layers.
+- **`replknet/kernels/depthWise_ch_*.cu`** — Per-stage CUDA kernels. Stages 0-1 use colmerge 8×12 approach, stage 2 uses naive64 half2.
 
 ## Troubleshooting
 
@@ -182,7 +233,7 @@ This means `ninja` is not on your PATH. Make sure your conda environment is acti
 | `ModuleNotFoundError: No module named 'timm'` | `pip install timm` |
 | `CUDA out of memory` | Use a GPU with >= 16 GB; try `--device cuda:0` to select a specific GPU |
 | First run very slow | Normal — CUDA kernels are JIT-compiled on first run; cached afterwards |
-| `ILSVRC/imagenet-1k` access denied | Log in to HuggingFace and accept dataset terms (see above) |
+| `ILSVRC/imagenet-1k` access denied | Log in to HuggingFace and accept dataset terms |
 
 ## Notes
 

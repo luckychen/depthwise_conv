@@ -1,0 +1,63 @@
+======================================================================
+ConvMixer-1536_20 Benchmark
+======================================================================
+Device: NVIDIA GB10
+PyTorch: 2.11.0+cu128, CuDNN: 91900
+Batch size: 1, FP16 channels_last
+
+  Loading 1536_20 CuDNN (eager)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+  Loading 1536_20 CuDNN (compile)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+  Loading 1536_20 Custom (eager)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+✓ Custom depthwise kernels loaded successfully (torch.library)
+  Loading 1536_20 Custom (compile)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+
+======================================================================
+LATENCY BENCHMARK
+======================================================================
+
+  CuDNN eager (500 runs):
+    Latency:    26.83 ms
+    Throughput: 37.3 img/s
+
+  CuDNN + compile (500 runs):
+    Latency:    25.44 ms
+    Throughput: 39.3 img/s
+
+  Custom eager (500 runs):
+    Latency:    6.83 ms
+    Throughput: 146.4 img/s
+
+  Custom + compile (500 runs):
+    Latency:    4.91 ms
+    Throughput: 203.5 img/s
+
+======================================================================
+SUMMARY
+======================================================================
+
+Configuration                          Latency   Throughput   vs CuDNN
+----------------------------------------------------------------------
+CuDNN eager                            26.83 ms      37.3 img/s      1.00x
+CuDNN + compile                        25.44 ms      39.3 img/s      1.05x
+Custom eager                            6.83 ms     146.4 img/s      3.93x
+Custom + compile                        4.91 ms     203.5 img/s      5.46x
+
+======================================================================
+DONE
+======================================================================

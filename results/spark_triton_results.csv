@@ -1,0 +1,7 @@
+config,channels,kernel_size,spatial,triton_ms
+ConvMixer 9x9/1536ch/32x32,1536,9,32x32,0.299
+ConvMixer 7x7/768ch/32x32,768,7,32x32,0.096
+RepLKNet 31x31/128ch/56x56,128,31,56x56,0.717
+RepLKNet 29x29/256ch/28x28,256,29,28x28,0.265
+RepLKNet 27x27/512ch/14x14,512,27,14x14,0.087
+RepLKNet 13x13/1024ch/7x7,1024,13,7x7,0.016
