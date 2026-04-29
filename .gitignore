@@ -1,0 +1,6 @@
+#checkpoint 
+*.pth
+*.tar*
+
+# imagenet
+*/imagenet/
