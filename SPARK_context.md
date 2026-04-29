@@ -300,7 +300,7 @@ Custom is **1.9–6.7× faster** than cuDNN NHWC for stages 0-2. This is the com
 - For RepLKNet (DW-dominated), the DW advantage wins → NCHW is faster overall
 - For ConvMixer (balanced), the effects cancel → NCHW ≈ NHWC
 
-**Paper argument**: Custom NHWC is the **globally optimal design point** because shared-memory tiling **closes the NHWC depthwise gap** with cuDNN NCHW from 4.6× to only 1.35×, while preserving NHWC's non-DW advantage (3.00ms vs 4.75ms). Neither cuDNN layout achieves this balance:
+**Paper argument**: Custom NHWC is the **globally optimal design point** because shared-memory tiling **closes the NHWC depthwise gap** with cuDNN NCHW from 4.9× (cuDNN NHWC) to within 3% (0.97× for 31×31/128ch) — essentially tied. With the DW gap eliminated, NHWC's non-DW advantage (3.00ms vs 4.75ms) tips the total. Neither cuDNN layout achieves this balance:
 - cuDNN NCHW: fast DW but slow non-DW → 8.26ms
 - cuDNN NHWC: slow DW but fast non-DW → 18.14ms
 - Custom NHWC: competitive DW + fast non-DW → 7.74ms (→ 4.52ms compiled)
@@ -578,7 +578,7 @@ Custom NHWC consistently achieves 10-23 FLOP/byte AI vs cuDNN NCHW's 2.6-14 FLOP
 
 The NCU data confirms four non-obvious findings at the hardware-counter level:
 
-1. **Shared-memory tiling closes the NHWC depthwise gap**: Custom NHWC achieves 2.6-4× higher effective arithmetic intensity (10-23 FLOP/byte) than cuDNN NCHW (2.6-14 FLOP/byte) by caching weights in shared memory. This transforms NHWC depthwise from 4.6× slower (cuDNN NHWC vs NCHW) to competitive (Custom NHWC within 1.35× of cuDNN NCHW).
+1. **Shared-memory tiling achieves DW parity with cuDNN NCHW**: Custom NHWC achieves 2.6-4× higher effective arithmetic intensity (10-23 FLOP/byte) than cuDNN NCHW (2.6-14 FLOP/byte) by caching weights in shared memory. This transforms NHWC depthwise from 4.9× slower (cuDNN NHWC vs NCHW, cold L2) to **within 3%** (0.97× for 31×31/128ch) — parity for large-spatial configs. For small-spatial configs (27×27/14×14), cuDNN NCHW still wins (4.0×) due to shared-memory occupancy limits.
 
 2. **cuDNN NHWC occupancy collapse explains the per-kernel speedup**: cuDNN NHWC achieves only 7.8-17.4% occupancy on RepLKNet stages — 3-8× lower than other implementations. Custom NHWC fixes this with shared-memory weight caching that keeps warps busy.
 
@@ -594,6 +594,8 @@ NSYS profiling (v2025.3.2) was run on a mini-block (31×31 DW + 1×1 PW + GELU) 
 
 ##### 4.9.9.1 Kernel-Level Breakdown (NSYS cuda_gpu_kern_sum)
 
+All NSYS profiles use 10 warmup calls before timing → warm L2 cache.
+
 | | Custom NHWC eager | cuDNN NCHW eager | Custom NHWC compiled | cuDNN NCHW compiled |
 |---|---|---|---|---|
 | **DW kernel** | 284 μs (1 kernel, colmerge) | 403 μs (1 kernel, conv_depthwise2d) | 284 μs (1 kernel, colmerge) | **2,644 μs** (768 kernels: 512 GEMM + 128 precomputed + 128 nhwc→nchw) |
@@ -603,13 +605,30 @@ NSYS profiling (v2025.3.2) was run on a mini-block (31×31 DW + 1×1 PW + GELU) 
 | **Total** | **304 μs** | **438 μs** | **299 μs** | **~2,660 μs** |
 | **Kernels/call** | **5** | **4** | **4** | **~898** |
 
+**Critical distinction — cold vs warm L2 cache:**
+
+The NSYS warm-cache numbers above show Custom DW at 284 μs vs cuDNN NCHW at 403 μs (1.42×). However, the **canonical cold-L2 benchmark** (`spark_kernel_comparison.csv`, Section 4.6) shows:
+
+| Config | Custom (ms) | cuDNN NCHW (ms) | Custom vs cuDNN NCHW |
+|--------|------------|-----------------|---------------------|
+| 31×31, 128ch, 56×56 | 0.428 | 0.416 | **0.97×** (tied, slightly slower) |
+| 29×29, 256ch, 28×28 | 0.268 | 0.198 | 0.74× (slower) |
+| 27×27, 512ch, 14×14 | 0.177 | 0.044 | 0.25× (much slower) |
+
+At cold L2, Custom's shared-memory weight loading incurs full DRAM latency — 31×31×32×140 blocks = 8.6 MB of weights streamed from DRAM. cuDNN NCHW's direct kernel accesses weights through L1 with near-perfect coalescing (99.8% L1 hit rate, per NCU), avoiding this upfront cost.
+
+Within a real network (warm L2), weights persist in L2 between layers, and Custom's warm-cache performance (284 μs) ≈ cuDNN NCHW's cold performance (416 μs) — the shmem strategy catches up once L2 is warm. This explains why Section 4.9.1 per-layer profiling shows Custom winning stage 0 by 1.13× within the network, but losing by 0.97× in cold isolation.
+
+The **cold-L2 numbers are the canonical fair comparison** for per-kernel benchmarks. The warm-L2 NSYS numbers are the realistic network-inference comparison.
+
 ##### 4.9.9.2 The Two Mechanisms (Hypothesis Verification)
 
 **Hypothesis 1 (Eager): Custom > cuDNN NCHW because NHWC layout favors non-DW operations.**
 
-✓ **CONFIRMED.** In eager mode, Custom NHWC achieves 1.44× over cuDNN NCHW through two compounding advantages:
-- **DW advantage (1.42×):** Shared-memory weight tiling (colmerge_8x12) runs at 284 μs vs cuDNN's direct convolution at 403 μs. NCU confirms: Custom achieves 55.7% memory bandwidth utilization vs cuDNN's 81.6%, but Custom's effective arithmetic intensity is 1.8× higher (8.6 vs 4.8 FLOP/byte) — shmem weight caching reduces DRAM bytes more than it costs in bandwidth utilization.
-- **PW advantage (3.57×):** 1×1 pointwise convolution is a GEMM operation. NHWC layout places channels contiguous in memory → cutlass achieves 7.4 μs. NCHW layout requires strided channel access → magma_sgemm takes 26.4 μs. This is a fundamental layout property, not a cuDNN deficiency.
+✓ **CONFIRMED, with clarification.** The cold-L2 canonical data shows Custom NHWC is NOT faster on DW — it achieves **parity** (within 3%) for large-spatial configs and is slower for small-spatial configs. The eager end-to-end win comes from:
+- **DW parity (not superiority):** Shared-memory tiling closes the NHWC DW gap from 4.9× (cuDNN NHWC) to 0.97× (cold L2) — essentially tied for 31×31 at 56×56. For smaller spatial dims, cuDNN NCHW still wins per-kernel.
+- **PW superiority (3.57×):** 1×1 pointwise convolution is a GEMM operation. NHWC layout places channels contiguous in memory → cutlass achieves 7.4 μs. NCHW layout requires strided channel access → magma_sgemm takes 26.4 μs. This is a fundamental layout property.
+- **Combined:** Even with DW at parity, the 3.57× PW advantage tips the total. In the NSYS mini-block: 304 μs vs 438 μs → Custom 1.44× faster. At full RepLKNet scale, this translates to 7.74 ms vs 8.26 ms eager (1.07×).
 
 **Hypothesis 2 (Compiled): Custom > cuDNN NCHW because custom ops are more fusion-friendly.**
 
@@ -620,19 +639,19 @@ NSYS profiling (v2025.3.2) was run on a mini-block (31×31 DW + 1×1 PW + GELU) 
 
 This GEMM decomposition is optimized for batch>1 throughput — at B=1, kernel launch overhead dominates and the GEMM tiles are underutilized. cuDNN eager correctly selects the direct kernel (knowing B=1), but torch.compile's inductor doesn't preserve this layout-specific optimization.
 
-##### 4.9.9.3 The Paper Argument (Three-Factor Explanation)
+##### 4.9.9.3 The Corrected Paper Argument (Three-Factor Explanation)
 
 Custom NHWC wins end-to-end over cuDNN's best layout through **three simultaneous advantages** that no single cuDNN layout can achieve:
 
 | Factor | Custom NHWC | cuDNN NCHW | cuDNN NHWC |
 |--------|------------|------------|------------|
-| 1. DW kernel quality | **Good** (shmem tiling, 284 μs) | **Good** (direct conv, 403 μs) | **Catastrophic** (768 GEMM kernels, 78 ms) |
+| 1. DW kernel (cold L2) | **Parity** (shmem tiling, 428 μs, 0.97×) | **Good** (direct conv, 416 μs) | **Catastrophic** (768 GEMM kernels, 2,045 μs) |
 | 2. PW kernel quality | **Good** (NHWC GEMM, 7 μs) | **Poor** (NCHW GEMM, 26 μs) | **Good** (NHWC GEMM, 7 μs) |
 | 3. Compile survival | **Immune** (custom op preserved) | **Broken** (inductor GEMM decomposition, 6.6× degradation) | **Broken** (already GEMM in eager) |
 
-**Eager result:** Custom wins by combining Factor 1 (shmem closes the DW gap) + Factor 2 (NHWC preserves PW speed).
+**Eager result:** Custom wins by achieving DW **parity** (Factor 1: shmem closes the 4.9× gap to 0.97×) + **PW superiority** (Factor 2: 3.6× faster pointwise in NHWC). Together these compound to 1.44× on the mini-block, 1.07× on full RepLKNet.
 
-**Compiled result:** Custom wins MORE because Factor 3 — cuDNN NCHW's only advantage (good DW) gets destroyed by inductor, inflating the gap from 1.44× to much larger. Custom's torch.library registration is a compiler boundary that preserves the carefully-tuned kernel.
+**Compiled result:** Custom wins MORE because Factor 3 — cuDNN NCHW's only advantage (the direct DW kernel) gets destroyed by inductor, replaced with GEMM decomposition at 6.6× degradation. Custom's torch.library registration is a compiler boundary that preserves the carefully-tuned kernel.
 
 The `test_compile_fusion.py` script and NSYS traces provide the evidence files.
 
@@ -739,10 +758,10 @@ The end-to-end picture is a DW vs non-DW tradeoff. Updated with native NCHW resu
 
 1. **cuDNN NCHW is NOT stranded** — it runs the entire RepLKNet natively in NCHW with zero conversion and is 2.2× faster than cuDNN NHWC (8.26 vs 18.14ms). The per-kernel NCHW advantage for depthwise DOES survive at the network level for DW-dominated architectures.
 2. **But NCHW hurts non-DW layers.** 1×1 pointwise convolutions, batch normalization, and SE blocks run slower in NCHW (4.75ms vs 3.00ms for Custom NHWC). This is because 1×1 convolutions benefit from NHWC's contiguous channel dimension for GEMM operations.
-3. **Custom NHWC wins the tradeoff.** Custom's shared-memory tiling keeps DW competitive in NHWC (4.74ms vs cuDNN NCHW's 3.52ms — only 1.35× gap), while gaining significantly on non-DW layers (3.00ms vs 4.75ms — 1.58× gap). Net result: Custom NHWC wins by 1.07× eager, 1.14× compiled.
+3. **Custom NHWC wins the tradeoff.** Custom's shared-memory tiling brings NHWC depthwise from 4.9× slower than cuDNN NCHW (cuDNN NHWC) to within 3% parity at stage 0, though cuDNN NCHW still wins per-kernel at smaller spatial dims (0.07-0.74× cold L2, Section 4.6). In aggregate within the network (warm L2): DW 4.74ms vs 3.52ms — a manageable 1.35× DW penalty, offset by 1.58× non-DW advantage (3.00ms vs 4.75ms). Net result: Custom NHWC wins by 1.07× eager, 1.14× compiled.
 4. **Architecture determines layout sensitivity.** ConvMixer (balanced DW/non-DW): NCHW ≈ NHWC. RepLKNet (DW-dominated): NCHW >> NHWC for cuDNN. This is itself a regime finding.
 
-**Paper insight**: The per-kernel vs end-to-end comparison reveals a deeper tradeoff than simple "layout conversion overhead." Custom NHWC succeeds because shared-memory tiling **closes the DW gap** with cuDNN NCHW (from 4.6× in cuDNN NHWC to only 1.35× in Custom) while **preserving NHWC's non-DW advantage**. This is a globally optimal design point that cannot be reached by either cuDNN layout alone.
+**Paper insight**: The per-kernel vs end-to-end comparison reveals a deeper tradeoff than simple "layout conversion overhead." Custom NHWC succeeds because shared-memory tiling **closes the NHWC DW gap** with cuDNN NCHW from 4.9× (cuDNN NHWC, cold L2) to within 3% (0.97×, stage 0), while **preserving NHWC's non-DW advantage** (3.57× faster 1×1 pointwise). Under torch.compile, a third advantage emerges: Custom's torch.library ops survive compilation intact, while inductor destroys cuDNN NCHW's direct DW kernel by replacing it with GEMM decomposition (6.6× degradation). This is a globally optimal design point that cannot be reached by either cuDNN layout alone.
 
 ### Regime 3: Triton Collapse Zone (K ≥ 27)
 - All RepLKNet large-kernel configs
@@ -756,13 +775,13 @@ The "regime-aware" thesis answers reviewer complaint #1 ("no novelty"). The nove
 - cuDNN NCHW wins per-kernel for depthwise on small-spatial/large-kernel AND this advantage survives at the network level for DW-dominated architectures (RepLKNet: NCHW 2.2× faster than NHWC). But NCHW hurts non-DW layers.
 - cuDNN NHWC is poorly optimized for depthwise (3.7–6.8× slower than its own NCHW) but benefits non-DW layers (1×1 conv, BN, SE blocks). Custom NHWC beats cuDNN NHWC per-kernel by 1.9–6.7× through shared-memory tiling.
 - Triton works for moderate kernels (2.6–2.9× over cuDNN) but catastrophically fails for large kernels (60× slower than Custom)
-- Custom NHWC finds the **globally optimal design point**: shared-memory tiling closes the NHWC depthwise gap with cuDNN NCHW (from 4.6× to only 1.35×), while preserving NHWC's advantage on non-DW layers
+- Custom NHWC finds the **globally optimal design point**: shared-memory tiling closes the NHWC depthwise gap with cuDNN NCHW from 4.9× (cuDNN NHWC, cold L2) to parity for large-spatial configs (0.97× at 31×31/128ch/56×56), while preserving NHWC's advantage on non-DW layers. Under torch.compile, custom ops survive intact while cuDNN's DW kernel gets replaced by inductor with GEMM decomposition (6.6× degradation).
 
 **Four non-obvious findings:**
 1. **Layout sensitivity is architecture-dependent**: cuDNN NCHW ≈ NHWC for ConvMixer (balanced DW/non-DW) but NCHW 2.2× faster for RepLKNet (DW-dominated). The optimal layout depends on the DW-to-non-DW compute ratio.
-2. **Shared-memory tiling changes the layout tradeoff**: Without it, NHWC depthwise is 4.6× slower than NCHW (cuDNN). With it (Custom), the gap shrinks to 1.35×. This tips the DW-vs-non-DW balance in NHWC's favor.
+2. **Shared-memory tiling changes the layout tradeoff**: Without it, NHWC depthwise is 4.9× slower than NCHW (cuDNN NHWC vs NCHW, cold L2). With it (Custom), the gap shrinks to parity at large spatial (0.97× at 31×31/56×56), though cuDNN NCHW still wins per-kernel at small spatial (4.0× at 27×27/14×14). This tips the DW-vs-non-DW balance in NHWC's favor where it matters most.
 3. **Triton collapses catastrophically** (60× slower) at large kernel sizes — it cannot express shared-memory data reuse, so K×K loops generate redundant global loads.
-4. **No single approach dominates**: cuDNN NCHW wins DW per-kernel, Custom NHWC wins DW per-kernel vs cuDNN NHWC, cuDNN NHWC wins non-DW, and Custom NHWC wins end-to-end. The optimal strategy requires considering the full network, not just individual kernels.
+4. **No single approach dominates**: cuDNN NCHW wins DW per-kernel, Custom NHWC achieves DW parity + PW superiority, cuDNN NHWC wins non-DW layout but loses DW, and Custom NHWC wins end-to-end. Under torch.compile, Custom widens the gap because inductor preserves custom ops but destroys cuDNN NCHW's direct kernel. The optimal strategy requires considering the full network, not just individual kernels.
 
 ### Suggested Paper Structure for DGX Spark Results
 
