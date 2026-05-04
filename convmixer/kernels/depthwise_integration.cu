@@ -1,6 +1,7 @@
 
 #include "depthwise_integration.hpp"
 #include <iostream>
+#include <c10/cuda/CUDAStream.h>
 
 //=============================================================================
 // Integration kernels for PyTorch custom ops
@@ -116,7 +117,8 @@ void depthwise_forward_32_768_7(half* inputTensor,
 		int tensorHeight,
 		int tensorWidth,
 		int Ch,
-		int windowSize) {
+		int windowSize,
+		cudaStream_t stream) {
 
 	if (tensorHeight != 32 || tensorWidth != 32 || Ch != 768 || windowSize != 7) {
 		std::cout << "Error: depthwise_forward_32_768_7 requires 32×32×768 tensor with 7×7 kernel" << std::endl;
@@ -127,7 +129,7 @@ void depthwise_forward_32_768_7(half* inputTensor,
 	int threadSize = 1024;
 	size_t sharedMemSize = 7 * 7 * 128 * sizeof(half);
 
-	depthwise_32_768_7_kernel<<<gridSize, threadSize, sharedMemSize>>>(inputTensor, weight, outputTensor);
+	depthwise_32_768_7_kernel<<<gridSize, threadSize, sharedMemSize, stream>>>(inputTensor, weight, outputTensor);
 }
 
 
@@ -401,7 +403,8 @@ void depthwise_forward_32_1536_9(half* inputTensor,
 		int Ch,
 		int windowSize,
 		int B,
-		int batchStride) {
+		int batchStride,
+		cudaStream_t stream) {
 
 	if (tensorHeight != 32 || tensorWidth != 32 || Ch != 1536 || windowSize != 9) {
 		std::cout << "Error: depthwise_forward_32_1536_9 requires 32×32×1536 tensor with 9×9 kernel" << std::endl;
@@ -414,7 +417,7 @@ void depthwise_forward_32_1536_9(half* inputTensor,
 	int threadSize = 512;
 	size_t sharedMemSize = (9 * 9 * 64 + 2 * 4 * 16 * 32 * 2) * sizeof(half);
 
-	depthwise_32_1536_9_kernel<<<gridSize, threadSize, sharedMemSize>>>(inputTensor, weight, outputTensor, B, batchStride);
+	depthwise_32_1536_9_kernel<<<gridSize, threadSize, sharedMemSize, stream>>>(inputTensor, weight, outputTensor, B, batchStride);
 }
 
 
@@ -675,7 +678,8 @@ void depthwise_forward_16_1536_9(half* inputTensor,
 		int tensorHeight,
 		int tensorWidth,
 		int Ch,
-		int windowSize) {
+		int windowSize,
+		cudaStream_t stream) {
 
 	if (tensorHeight != 16 || tensorWidth != 16 || Ch != 1536 || windowSize != 9) {
 		std::cout << "Error: depthwise_forward_16_1536_9 requires 16×16×1536 tensor with 9×9 kernel" << std::endl;
@@ -686,7 +690,7 @@ void depthwise_forward_16_1536_9(half* inputTensor,
 	int threadSize = 512;
 	size_t sharedMemSize = (9 * 9 * 64 + 2 * 4 * 16 * 32 * 2) * sizeof(half);
 
-	depthwise_16_1536_9_kernel<<<gridSize, threadSize, sharedMemSize>>>(inputTensor, weight, outputTensor);
+	depthwise_16_1536_9_kernel<<<gridSize, threadSize, sharedMemSize, stream>>>(inputTensor, weight, outputTensor);
 }
 
 
@@ -732,11 +736,12 @@ void depthwise_forward_32_768_7_torch(
     int Ch,
     int windowSize) {
 
+    cudaStream_t stream = c10::cuda::getCurrentCUDAStream(input.device().index()).stream();
     depthwise_forward_32_768_7(
         reinterpret_cast<half*>(input.data_ptr<at::Half>()),
         reinterpret_cast<const half*>(weight.data_ptr<at::Half>()),
         reinterpret_cast<half*>(output.data_ptr<at::Half>()),
-        tensorHeight, tensorWidth, Ch, windowSize
+        tensorHeight, tensorWidth, Ch, windowSize, stream
     );
 }
 
@@ -749,16 +754,16 @@ void depthwise_forward_32_1536_9_torch(
     int Ch,
     int windowSize) {
 
-    // B = input dim 0 (batch), batchStride = H*W*C (flat NHWC stride)
     int B = input.size(0);
     int batchStride = tensorHeight * tensorWidth * Ch;
+    cudaStream_t stream = c10::cuda::getCurrentCUDAStream(input.device().index()).stream();
 
     depthwise_forward_32_1536_9(
         reinterpret_cast<half*>(input.data_ptr<at::Half>()),
         reinterpret_cast<const half*>(weight.data_ptr<at::Half>()),
         reinterpret_cast<half*>(output.data_ptr<at::Half>()),
         tensorHeight, tensorWidth, Ch, windowSize,
-        B, batchStride
+        B, batchStride, stream
     );
 }
 
@@ -771,11 +776,12 @@ void depthwise_forward_16_1536_9_torch(
     int Ch,
     int windowSize) {
 
+    cudaStream_t stream = c10::cuda::getCurrentCUDAStream(input.device().index()).stream();
     depthwise_forward_16_1536_9(
         reinterpret_cast<half*>(input.data_ptr<at::Half>()),
         reinterpret_cast<const half*>(weight.data_ptr<at::Half>()),
         reinterpret_cast<half*>(output.data_ptr<at::Half>()),
-        tensorHeight, tensorWidth, Ch, windowSize
+        tensorHeight, tensorWidth, Ch, windowSize, stream
     );
 }
 
