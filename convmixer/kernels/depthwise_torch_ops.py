@@ -61,7 +61,7 @@ def _load_kernels():
 
 
 # Define custom operator namespace
-# Using "depthwise::" namespace for all our custom ops
+# Ops accept channels_last [B, C, H, W] tensors (physical NHWC memory)
 torch.library.define(
     "depthwise::conv2d_32_1536_9",
     "(Tensor input, Tensor weight) -> Tensor",
@@ -83,172 +83,55 @@ torch.library.define(
 )
 
 
-# Implementation functions for each kernel
 @torch.library.impl("depthwise::conv2d_32_1536_9", "default")
 def _depthwise_conv2d_32_1536_9_impl(input, weight):
-    """
-    Custom 9×9 depthwise convolution (32×32 spatial, 1536 channels).
-
-    Args:
-        input: [H, W, C] = [32, 32, 1536], dtype=torch.float16, contiguous
-        weight: [K, K, C] = [9, 9, 1536], dtype=torch.float16, contiguous
-
-    Returns:
-        output: [H, W, C] = [32, 32, 1536], dtype=torch.float16
-    """
     ops = _load_kernels()
-    if ops is None:
-        raise RuntimeError("Custom kernels not loaded")
-
-    # Validate inputs
-    assert input.dtype == torch.float16, f"Expected float16, got {input.dtype}"
-    assert weight.dtype == torch.float16, f"Expected float16, got {weight.dtype}"
-    assert input.is_contiguous(), "Input must be contiguous"
-    assert weight.is_contiguous(), "Weight must be contiguous"
-    assert input.shape == (32, 32, 1536), f"Expected [32, 32, 1536], got {input.shape}"
-    assert weight.shape == (9, 9, 1536), f"Expected [9, 9, 1536], got {weight.shape}"
-
     output = torch.empty_like(input)
-
-    # Call C++ kernel
-    ops.depthwise_forward_32_1536_9(
-        input, weight, output,
-        32, 32, 1536, 9
-    )
-
+    ops.depthwise_forward_32_1536_9(input, weight, output, 32, 32, 1536, 9)
     return output
 
 
 @torch.library.impl("depthwise::conv2d_32_768_7", "default")
 def _depthwise_conv2d_32_768_7_impl(input, weight):
-    """
-    Custom 7×7 depthwise convolution (32×32 spatial, 768 channels).
-
-    Args:
-        input: [H, W, C] = [32, 32, 768], dtype=torch.float16, contiguous
-        weight: [K, K, C] = [7, 7, 768], dtype=torch.float16, contiguous
-
-    Returns:
-        output: [H, W, C] = [32, 32, 768], dtype=torch.float16
-    """
     ops = _load_kernels()
-    if ops is None:
-        raise RuntimeError("Custom kernels not loaded")
-
-    assert input.dtype == torch.float16
-    assert weight.dtype == torch.float16
-    assert input.is_contiguous()
-    assert weight.is_contiguous()
-    assert input.shape == (32, 32, 768)
-    assert weight.shape == (7, 7, 768)
-
     output = torch.empty_like(input)
-
-    ops.depthwise_forward_32_768_7(
-        input, weight, output,
-        32, 32, 768, 7
-    )
-
+    for b in range(input.size(0)):
+        ops.depthwise_forward_32_768_7(input[b], weight, output[b], 32, 32, 768, 7)
     return output
 
 
 @torch.library.impl("depthwise::conv2d_16_1536_9", "default")
 def _depthwise_conv2d_16_1536_9_impl(input, weight):
-    """
-    Custom 9×9 depthwise convolution (16×16 spatial, 1536 channels).
-
-    Args:
-        input: [H, W, C] = [16, 16, 1536], dtype=torch.float16, contiguous
-        weight: [K, K, C] = [9, 9, 1536], dtype=torch.float16, contiguous
-
-    Returns:
-        output: [H, W, C] = [16, 16, 1536], dtype=torch.float16
-    """
     ops = _load_kernels()
-    if ops is None:
-        raise RuntimeError("Custom kernels not loaded")
-
-    assert input.dtype == torch.float16
-    assert weight.dtype == torch.float16
-    assert input.is_contiguous()
-    assert weight.is_contiguous()
-    assert input.shape == (16, 16, 1536)
-    assert weight.shape == (9, 9, 1536)
-
     output = torch.empty_like(input)
-
-    ops.depthwise_forward_16_1536_9(
-        input, weight, output,
-        16, 16, 1536, 9
-    )
-
+    for b in range(input.size(0)):
+        ops.depthwise_forward_16_1536_9(input[b], weight, output[b], 16, 16, 1536, 9)
     return output
 
 
 @torch.library.impl("depthwise::conv2d_32_1536_13", "default")
 def _depthwise_conv2d_32_1536_13_impl(input, weight):
-    """
-    Custom 13×13 depthwise convolution (32×32 spatial, 1536 channels).
-
-    Args:
-        input: [H, W, C] = [32, 32, 1536], dtype=torch.float16, contiguous
-        weight: [K, K, C] = [13, 13, 1536], dtype=torch.float16, contiguous
-
-    Returns:
-        output: [H, W, C] = [32, 32, 1536], dtype=torch.float16
-    """
     ops = _load_kernels()
-    if ops is None:
-        raise RuntimeError("Custom kernels not loaded")
-
-    assert input.dtype == torch.float16
-    assert weight.dtype == torch.float16
-    assert input.is_contiguous()
-    assert weight.is_contiguous()
-    assert input.shape == (32, 32, 1536)
-    assert weight.shape == (13, 13, 1536)
-
     output = torch.empty_like(input)
-
-    ops.depthwise_forward_32_1536_13(
-        input, weight, output,
-        32, 32, 1536, 13
-    )
-
+    for b in range(input.size(0)):
+        ops.depthwise_forward_32_1536_13(input[b], weight, output[b], 32, 32, 1536, 13)
     return output
 
 
-# Register fake implementations for shape inference (needed by torch.compile)
-# Note: Using register_fake (new API) instead of impl_abstract (deprecated)
 @torch.library.register_fake("depthwise::conv2d_32_1536_9")
 def _depthwise_conv2d_32_1536_9_fake(input, weight):
-    """Meta function for shape inference."""
-    assert input.shape == (32, 32, 1536)
-    assert weight.shape == (9, 9, 1536)
     return torch.empty_like(input)
-
 
 @torch.library.register_fake("depthwise::conv2d_32_768_7")
 def _depthwise_conv2d_32_768_7_fake(input, weight):
-    """Meta function for shape inference."""
-    assert input.shape == (32, 32, 768)
-    assert weight.shape == (7, 7, 768)
     return torch.empty_like(input)
-
 
 @torch.library.register_fake("depthwise::conv2d_16_1536_9")
 def _depthwise_conv2d_16_1536_9_fake(input, weight):
-    """Meta function for shape inference."""
-    assert input.shape == (16, 16, 1536)
-    assert weight.shape == (9, 9, 1536)
     return torch.empty_like(input)
-
 
 @torch.library.register_fake("depthwise::conv2d_32_1536_13")
 def _depthwise_conv2d_32_1536_13_fake(input, weight):
-    """Meta function for shape inference."""
-    assert input.shape == (32, 32, 1536)
-    assert weight.shape == (13, 13, 1536)
     return torch.empty_like(input)
 
 
@@ -277,11 +160,8 @@ class CustomDepthwiseConv2d(nn.Module):
         kernel_size (int): Size of the depthwise kernel (7, 9, or 13)
         bias (bool): If True, adds a learnable bias (default: True)
 
-    Input:
-        - x: [B, C, H, W] tensor in NCHW format, dtype=torch.float16
-
-    Output:
-        - [B, C, H, W] tensor in NCHW format, dtype=torch.float16
+    Input/Output:
+        torch.float16, memory_format=torch.channels_last
     """
 
     SUPPORTED_CONFIGS = {
@@ -329,70 +209,23 @@ class CustomDepthwiseConv2d(nn.Module):
         return self.SUPPORTED_CONFIGS[config]
 
     def forward(self, x):
-        """
-        Forward pass using registered custom operator.
-
-        Args:
-            x: [B, C, H, W] tensor, dtype=torch.float16
-
-        Returns:
-            [B, C, H, W] tensor, dtype=torch.float16 in channels_last format
-        """
-        # Validate input
-        if x.dim() != 4:
-            raise ValueError(f"Expected 4D tensor [B, C, H, W], got {x.dim()}D with shape {x.shape}")
-
         B, C, H, W = x.shape
 
-        if x.dtype != torch.float16:
-            raise TypeError(f"Expected torch.float16 input, got {x.dtype}")
-
-        if C != self.channels:
-            raise ValueError(f"Expected {self.channels} channels, got {C}")
-
-        if H != W:
-            raise ValueError(f"Expected square spatial dimensions, got {H}×{W}")
-
-        # Determine spatial size and operator name on first forward
         if self.spatial_size is None:
             self.spatial_size = H
             self.op_name = self._get_op_name(H)
 
-        # Validate spatial size hasn't changed
-        if H != self.spatial_size:
-            raise ValueError(
-                f"Spatial size changed from {self.spatial_size} to {H}. "
-                "CustomDepthwiseConv2d does not support dynamic spatial sizes."
-            )
+        if self.op_name == 'depthwise::conv2d_32_1536_9':
+            output = torch.ops.depthwise.conv2d_32_1536_9(x, self.weight)
+        elif self.op_name == 'depthwise::conv2d_32_768_7':
+            output = torch.ops.depthwise.conv2d_32_768_7(x, self.weight)
+        elif self.op_name == 'depthwise::conv2d_16_1536_9':
+            output = torch.ops.depthwise.conv2d_16_1536_9(x, self.weight)
+        elif self.op_name == 'depthwise::conv2d_32_1536_13':
+            output = torch.ops.depthwise.conv2d_32_1536_13(x, self.weight)
+        else:
+            raise RuntimeError(f"Unknown operator: {self.op_name}")
 
-        # Convert to NHWC format
-        x_nhwc = x.permute(0, 2, 3, 1).contiguous()  # [B, H, W, C]
-
-        # Process each batch item using registered custom op
-        # NOTE: torch.compile can see and optimize this!
-        outputs = []
-        for b in range(B):
-            # Call registered operator using torch.ops
-            if self.op_name == 'depthwise::conv2d_32_1536_9':
-                out = torch.ops.depthwise.conv2d_32_1536_9(x_nhwc[b], self.weight)
-            elif self.op_name == 'depthwise::conv2d_32_768_7':
-                out = torch.ops.depthwise.conv2d_32_768_7(x_nhwc[b], self.weight)
-            elif self.op_name == 'depthwise::conv2d_16_1536_9':
-                out = torch.ops.depthwise.conv2d_16_1536_9(x_nhwc[b], self.weight)
-            elif self.op_name == 'depthwise::conv2d_32_1536_13':
-                out = torch.ops.depthwise.conv2d_32_1536_13(x_nhwc[b], self.weight)
-            else:
-                raise RuntimeError(f"Unknown operator: {self.op_name}")
-
-            outputs.append(out)
-
-        output_nhwc = torch.stack(outputs, dim=0)  # [B, H, W, C]
-
-        # Convert back to NCHW shape with channels_last memory format
-        output = output_nhwc.permute(0, 3, 1, 2)
-        output = output.to(memory_format=torch.channels_last)
-
-        # Add bias if present
         if self.bias is not None:
             output = output + self.bias.view(1, -1, 1, 1)
 

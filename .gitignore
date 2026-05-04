@@ -4,3 +4,5 @@
 
 # imagenet
 */imagenet/
+__pycache__/
+*.pyc
