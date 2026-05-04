@@ -45,13 +45,16 @@ void depthwise_forward_32_768_7(half* inputTensor,
 // Threads: 512/block
 // Shared memory: 26.1KB (weight + 2× input double-buffer)
 // Best variant: barrier stall hiding via 2 blocks/SM occupancy
+// B=1: single batch, B>1: processes in BATCH_GROUP=2 groups
 void depthwise_forward_32_1536_9(half* inputTensor,
 		const half* weight,
 		half* outputTensor,
 		int tensorHeight,
 		int tensorWidth,
 		int Ch,
-		int windowSize);
+		int windowSize,
+		int B,
+		int batchStride);
 
 // 16×16×1536, 9×9 kernel (512-thread, 2 blocks/SM, shared memory)
 // Grid: 2×2×24 = 96 blocks (64ch/block)

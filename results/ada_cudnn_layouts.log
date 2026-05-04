@@ -1,0 +1,18 @@
+==============================================================================
+cuDNN Best-Layout Baseline (depthwise conv, batch=1, FP16)
+==============================================================================
+Device: NVIDIA RTX 6000 Ada Generation
+PyTorch: 2.9.1+cu128, CuDNN: 91002
+cudnn.benchmark = True (auto-selects fastest algorithm)
+Runs per config: 500
+
+Config                            NCHW (ms)  NHWC (ms)   Best    Ratio
+------------------------------------------------------------------------------
+ConvMixer 9x9/1536ch/32x32            0.090      0.289   NCHW    3.19x
+ConvMixer 7x7/768ch/32x32             0.027      0.018   NHWC    1.47x
+RepLKNet 31x31/128ch/56x56            0.150      0.634   NCHW    4.23x
+RepLKNet 29x29/256ch/28x28            0.077      0.267   NCHW    3.49x
+RepLKNet 27x27/512ch/14x14            0.015      0.093   NCHW    6.06x
+RepLKNet 13x13/1024ch/7x7             0.007      0.024   NCHW    3.53x
+
+Results saved to results/ada_cudnn_layouts.csv

@@ -1,0 +1,7 @@
+Device: NVIDIA RTX 6000 Ada Generation
+Compute: 8.9
+SMs: 142
+Mem: 50.9 GB
+PyTorch: 2.9.1+cu128
+CUDA: 12.8
+cuDNN: 91002

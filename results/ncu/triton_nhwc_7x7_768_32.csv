@@ -1,0 +1,6 @@
+==PROF== Connected to process 940446 (/home/chenchon/miniconda3/envs/cuda/bin/python3.10)
+==PROF== Disconnected from process 940446
+==WARNING== No kernels were profiled.
+Available Kernels:
+1. _dw_conv_nhwc
+2. distribution_elementwise_grid_stride_kernel

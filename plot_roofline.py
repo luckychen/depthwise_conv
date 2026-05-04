@@ -23,8 +23,8 @@ import numpy as np
 # GB10 theoretical peaks (estimates; NCU SpeedOfLight will give actuals)
 # From NCU data: SM Frequency ~2.1 GHz, 48 SMs
 # FP16 non-tensor-core throughput: we derive from NCU SpeedOfLight data
-PEAK_MEM_BW_GBS = 400     # NVLink-C2C unified memory, estimated
-PEAK_FP16_TFLOPS = 209    # from DGX Spark spec sheet
+PEAK_MEM_BW_GBS = 960     # RTX 6000 Ada GDDR6
+PEAK_FP16_TFLOPS = 91.1   # RTX 6000 Ada FP16 peak
 
 # Method colors and markers
 METHOD_STYLES = {

@@ -1,0 +1,65 @@
+/home/chenchon/chConv/paper/latex/repo/convmixer/kernels/depthwise_torch_ops.py:57: UserWarning: Failed to load custom kernels: Ninja is required to load C++ extensions (pip install ninja to get it)
+  warnings.warn(f"Failed to load custom kernels: {e}")
+======================================================================
+ConvMixer-1536_20 Benchmark
+======================================================================
+Device: NVIDIA RTX 6000 Ada Generation
+PyTorch: 2.9.1+cu128, CuDNN: 91002
+Batch size: 1, FP16 channels_last, fp16_method=autocast
+
+  Loading 1536_20 CuDNN (eager)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+  Loading 1536_20 CuDNN (compile)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+  Loading 1536_20 Custom (eager)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+✓ Custom depthwise kernels loaded successfully (torch.library)
+  Loading 1536_20 Custom (compile)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+
+======================================================================
+LATENCY BENCHMARK
+======================================================================
+
+  CuDNN eager (500 runs):
+    Latency:    9.07 ms
+    Throughput: 110.2 img/s
+
+  CuDNN + compile (500 runs):
+    Latency:    7.55 ms
+    Throughput: 132.4 img/s
+
+  Custom eager (500 runs):
+    Latency:    3.60 ms
+    Throughput: 277.4 img/s
+
+  Custom + compile (500 runs):
+    Latency:    1.62 ms
+    Throughput: 617.6 img/s
+
+======================================================================
+SUMMARY
+======================================================================
+
+Configuration                          Latency   Throughput   vs CuDNN
+----------------------------------------------------------------------
+CuDNN eager                             9.07 ms     110.2 img/s      1.00x
+CuDNN + compile                         7.55 ms     132.4 img/s      1.20x
+Custom eager                            3.60 ms     277.4 img/s      2.52x
+Custom + compile                        1.62 ms     617.6 img/s      5.60x
+
+======================================================================
+DONE
+======================================================================

@@ -1,0 +1,48 @@
+======================================================================
+Tile Sensitivity Sweep — 31×31 depthwise, 128ch, 56×56
+======================================================================
+Device:   NVIDIA RTX 6000 Ada Generation
+PyTorch:  2.9.1+cu128
+Runs:     500 (warmup=50)
+M values: [4, 8, 16]
+Cb values: [32, 64, 128]
+
+
+  M= 4, Cb= 32  (shmem=60KB)  — compiling...ok (max_diff=1.3125)  shmem=60.1KB  grid=(14,14,4)=784blk  benchmarking...  0.249 ms
+
+  M= 4, Cb= 64  (shmem=120KB)  — SKIP (exceeds SM shmem limit 99KB)
+
+  M= 4, Cb=128  (shmem=240KB)  — SKIP (exceeds SM shmem limit 99KB)
+
+  M= 8, Cb= 32  (shmem=60KB)  — compiling...ok (max_diff=1.3125)  shmem=60.1KB  grid=(7,7,4)=196blk  benchmarking...  0.297 ms
+
+  M= 8, Cb= 64  (shmem=120KB)  — SKIP (exceeds SM shmem limit 99KB)
+
+  M= 8, Cb=128  (shmem=240KB)  — SKIP (exceeds SM shmem limit 99KB)
+
+  M=16, Cb= 32  (shmem=60KB)  — compiling...ok (max_diff=1.3125)  shmem=60.1KB  grid=(4,4,4)=64blk  benchmarking...  0.681 ms
+
+  M=16, Cb= 64  (shmem=120KB)  — SKIP (exceeds SM shmem limit 99KB)
+
+  M=16, Cb=128  (shmem=240KB)  — SKIP (exceeds SM shmem limit 99KB)
+
+======================================================================
+SUMMARY — 31×31 Tile Sensitivity (cold L2, ms per call)
+======================================================================
+   M   Cb    Latency     Shmem           Grid  Blocks
+----------------------------------------------------------------------
+   4   32     0.2486    60.1KB      (14,14,4)     784
+   4   64 SKIP_SHMEM   120.1KB            N/A     N/A
+   4  128 SKIP_SHMEM   240.2KB            N/A     N/A
+   8   32     0.2969    60.1KB        (7,7,4)     196
+   8   64 SKIP_SHMEM   120.1KB            N/A     N/A
+   8  128 SKIP_SHMEM   240.2KB            N/A     N/A
+  16   32     0.6814    60.1KB        (4,4,4)      64
+  16   64 SKIP_SHMEM   120.1KB            N/A     N/A
+  16  128 SKIP_SHMEM   240.2KB            N/A     N/A
+
+Results written to: results/ada_sensitivity_31x31.csv
+
+======================================================================
+DONE
+======================================================================
