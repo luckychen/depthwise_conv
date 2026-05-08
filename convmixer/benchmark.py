@@ -31,23 +31,33 @@ from convmixer import load_pretrained
 from depthwise_torch_ops import replace_depthwise_convs
 
 
-def benchmark_one(model, device, num_runs=500, warmup=200):
+def benchmark_one(model, device, num_runs=500, warmup=200, fp16_method='model_half', batch=1):
     """Benchmark a single model, return latency in ms."""
-    x = torch.randn(1, 3, 224, 224, device=device).to(memory_format=torch.channels_last)
+    x = torch.randn(batch, 3, 224, 224, device=device).to(memory_format=torch.channels_last)
+    if fp16_method == 'model_half':
+        x = x.half()
     model.eval()
-    with torch.no_grad(), torch.amp.autocast('cuda', dtype=torch.float16):
+
+    def run_forward():
+        if fp16_method == 'autocast':
+            with torch.amp.autocast('cuda', dtype=torch.float16):
+                return model(x)
+        else:
+            return model(x)
+
+    with torch.no_grad():
         for _ in range(warmup):
-            _ = model(x)
+            run_forward()
         torch.cuda.synchronize(device)
 
         start = time.perf_counter()
         for _ in range(num_runs):
-            _ = model(x)
+            run_forward()
         torch.cuda.synchronize(device)
         elapsed = time.perf_counter() - start
 
     latency = (elapsed / num_runs) * 1000
-    throughput = num_runs / elapsed
+    throughput = (num_runs * batch) / elapsed  # images per second
     return latency, throughput
 
 
@@ -109,6 +119,54 @@ def get_imagenet_dataloader(data_dir, batch_size=1, num_workers=4, resize=233,
 
 
 @torch.no_grad()
+def benchmark_throughput_real(model, device, data_dir, batch=1, fp16_method='model_half',
+                               num_batches=200, warmup_batches=50):
+    """Measure throughput on real ImageNet validation images, data pre-loaded to GPU."""
+    loader = get_imagenet_dataloader(data_dir, batch_size=batch, num_workers=4)
+
+    model.eval()
+
+    # Pre-load enough batches to GPU before timing starts
+    total_needed = warmup_batches + num_batches
+    print(f"  Pre-loading {total_needed} batches to GPU...")
+    gpu_batches = []
+    for images, _ in loader:
+        x = images.to(device, memory_format=torch.channels_last)
+        if fp16_method == 'model_half':
+            x = x.half()
+        gpu_batches.append(x)
+        if len(gpu_batches) >= total_needed:
+            break
+    torch.cuda.synchronize(device)
+
+    def run_batch(x):
+        if fp16_method == 'autocast':
+            with torch.amp.autocast('cuda', dtype=torch.float16):
+                return model(x)
+        else:
+            return model(x)
+
+    print(f"  Warming up ({warmup_batches} batches)...")
+    for x in gpu_batches[:warmup_batches]:
+        run_batch(x)
+    torch.cuda.synchronize(device)
+
+    print(f"  Measuring ({num_batches} batches)...")
+    measure_batches = gpu_batches[warmup_batches:warmup_batches + num_batches]
+    total_images = sum(x.shape[0] for x in measure_batches)
+
+    start = time.perf_counter()
+    for x in measure_batches:
+        run_batch(x)
+    torch.cuda.synchronize(device)
+    elapsed = time.perf_counter() - start
+
+    throughput = total_images / elapsed
+    latency = (elapsed / num_batches) * 1000
+    return latency, throughput
+
+
+@torch.no_grad()
 def validate_accuracy(model, loader, device, model_name):
     """Validate top-1/top-5 accuracy on ImageNet."""
     model.eval()
@@ -153,22 +211,27 @@ def validate_accuracy(model, loader, device, model_name):
     return top1, top5
 
 
-def build_convmixer_configs(model_name, device):
+def build_convmixer_configs(model_name, device, fp16_method='model_half'):
     """Build all ConvMixer configurations for benchmarking."""
     configs = []
+
+    def maybe_half(m):
+        if fp16_method == 'model_half':
+            m = m.to(dtype=torch.float16, memory_format=torch.channels_last)
+        return m
 
     # CuDNN eager
     print(f"\n  Loading {model_name} CuDNN (eager)...")
     m = load_pretrained(model_name, checkpoints_dir=os.path.join(_THIS_DIR, 'checkpoints'),
                         device=device, channels_last=True)
-    m.eval()
+    m = maybe_half(m).eval()
     configs.append((f'CuDNN eager', m))
 
     # CuDNN + compile
     print(f"  Loading {model_name} CuDNN (compile)...")
     m = load_pretrained(model_name, checkpoints_dir=os.path.join(_THIS_DIR, 'checkpoints'),
                         device=device, channels_last=True)
-    m.eval()
+    m = maybe_half(m).eval()
     m = torch.compile(m, mode='default')
     configs.append((f'CuDNN + compile', m))
 
@@ -176,42 +239,49 @@ def build_convmixer_configs(model_name, device):
     print(f"  Loading {model_name} Custom (eager)...")
     m = load_pretrained(model_name, checkpoints_dir=os.path.join(_THIS_DIR, 'checkpoints'),
                         device=device, channels_last=True)
-    m.eval()
     m = replace_depthwise_convs(m, verbose=False)
+    m = maybe_half(m).eval()
     configs.append((f'Custom eager', m))
 
     # Custom + compile
     print(f"  Loading {model_name} Custom (compile)...")
     m = load_pretrained(model_name, checkpoints_dir=os.path.join(_THIS_DIR, 'checkpoints'),
                         device=device, channels_last=True)
-    m.eval()
     m = replace_depthwise_convs(m, verbose=False)
+    m = maybe_half(m).eval()
     m = torch.compile(m, mode='default')
     configs.append((f'Custom + compile', m))
 
     return configs
 
 
-def build_baseline_configs(device):
+def build_baseline_configs(device, fp16_method='model_half'):
     """Build baseline model configurations."""
     import torchvision.models as models
     configs = []
 
+    def load_baseline(m):
+        if fp16_method == 'model_half':
+            m = m.to(device, dtype=torch.float16, memory_format=torch.channels_last).eval()
+        else:
+            m = m.to(device, memory_format=torch.channels_last).eval()
+        return m
+
     print("\n  Loading MobileNetV3-Large...")
     m = models.mobilenet_v3_large(weights=models.MobileNet_V3_Large_Weights.IMAGENET1K_V2)
-    m = m.to(device, dtype=torch.float16, memory_format=torch.channels_last).eval()
+    m = load_baseline(m)
     m = torch.compile(m, mode='default')
     configs.append(('MobileNetV3-Large + compile', m))
 
     print("  Loading EfficientNet-B0...")
     m = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.IMAGENET1K_V1)
-    m = m.to(device, dtype=torch.float16, memory_format=torch.channels_last).eval()
+    m = load_baseline(m)
     m = torch.compile(m, mode='default')
     configs.append(('EfficientNet-B0 + compile', m))
 
     print("  Loading ResNet-152...")
     m = models.resnet152(weights=models.ResNet152_Weights.IMAGENET1K_V2)
-    m = m.to(device, dtype=torch.float16, memory_format=torch.channels_last).eval()
+    m = load_baseline(m)
     m = torch.compile(m, mode='default')
     configs.append(('ResNet-152 + compile', m))
 
@@ -231,6 +301,13 @@ def main():
                         help='Skip accuracy validation (latency only)')
     parser.add_argument('--baselines', action='store_true',
                         help='Include baseline models (MobileNetV3, EfficientNet, ResNet)')
+    parser.add_argument('--fp16_method', default='model_half',
+                        choices=['autocast', 'model_half'],
+                        help='FP16 method: autocast or model_half (default: model_half)')
+    parser.add_argument('--batch', type=int, default=1,
+                        help='Batch size (default: 1)')
+    parser.add_argument('--real_data', action='store_true',
+                        help='Use real ImageNet images for throughput benchmark')
     args = parser.parse_args()
 
     device = torch.device(args.device)
@@ -241,13 +318,13 @@ def main():
     print("=" * 70)
     print(f"Device: {torch.cuda.get_device_name(device)}")
     print(f"PyTorch: {torch.__version__}, CuDNN: {torch.backends.cudnn.version()}")
-    print(f"Batch size: 1, FP16 channels_last")
+    print(f"Batch size: {args.batch}, FP16 channels_last, fp16_method={args.fp16_method}")
 
     # Build configs
-    configs = build_convmixer_configs(args.model, device)
+    configs = build_convmixer_configs(args.model, device, fp16_method=args.fp16_method)
 
     if args.baselines:
-        configs.extend(build_baseline_configs(device))
+        configs.extend(build_baseline_configs(device, fp16_method=args.fp16_method))
 
     # Latency benchmark
     print("\n" + "=" * 70)
@@ -256,8 +333,15 @@ def main():
 
     results = {}
     for name, model in configs:
-        print(f"\n  {name} ({args.num_runs} runs):")
-        latency, throughput = benchmark_one(model, device, args.num_runs)
+        print(f"\n  {name}:")
+        if args.real_data:
+            latency, throughput = benchmark_throughput_real(
+                model, device, args.data_dir, batch=args.batch,
+                fp16_method=args.fp16_method, num_batches=args.num_runs)
+        else:
+            latency, throughput = benchmark_one(model, device, args.num_runs,
+                                                fp16_method=args.fp16_method,
+                                                batch=args.batch)
         print(f"    Latency:    {latency:.2f} ms")
         print(f"    Throughput: {throughput:.1f} img/s")
         results[name] = {'latency': latency, 'throughput': throughput}
