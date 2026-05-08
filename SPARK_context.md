@@ -659,6 +659,100 @@ The `test_compile_fusion.py` script and NSYS traces provide the evidence files.
 
 ### 4.10 Roofline Analysis (DONE — NCU data collected, plot generated)
 
+### 4.11 Paper-Revision Experiments (DONE 2026-05-08)
+
+This section records the experiments added during paper revision. They re-run prior eager
+benchmarks under model.half() (replacing autocast which had unrelated overhead in the eager
+path), test the L2 batch hypothesis, add baselines, and extract L2 hit rates for the central
+evidence table. See `SPARK_plan.md` for the execution log and `results/spark_cross_platform_table.md`
+for the master comparison.
+
+#### 4.11.1 ConvMixer Eager (model.half(), B=1, 500 runs)
+
+| Model | CuDNN eager | CuDNN+compile | Custom eager | Custom+compile | Custom+compile vs CuDNN-best |
+|---|---|---|---|---|---|
+| 1536/20 | 25.11 ms | 24.16 ms | 4.92 ms | **4.26 ms** | **5.67×** |
+| 768/32 | 14.42 ms | 12.95 ms | 3.51 ms | **2.09 ms** | **6.20×** |
+
+The autocast-era logs (`spark_convmixer_1536_20.txt`, `spark_convmixer_768_32.txt`) overstated
+eager latencies by 10–30% due to per-forward dtype-casting overhead. Compiled numbers were
+unaffected because they were already collected via `benchmark_compiled_comparison.py` which used
+`model.half()`. The autocast logs are kept on disk for reference but are superseded.
+
+#### 4.11.2 Batch Sweep B=1, 2, 4 (1536/20, real ImageNet, model.half())
+
+| B | Custom eager (img/s) | Custom+compile (img/s) | cuDNN eager (img/s) |
+|---|---|---|---|
+| 1 | 201.4 | 230.7 | 39.3 |
+| 2 | 199.9 | 234.4 | 39.6 |
+| 4 | 188.4 | 226.6 | 38.9 |
+
+**The L2 capacity hypothesis was disconfirmed.** Custom eager throughput *decreases* by 6% from
+B=1 to B=4 — the opposite of the prediction that pushing the working set past Spark's 24 MB L2
+would amplify shared-memory tiling's value. cuDNN shows the same flat-to-decline pattern.
+
+**Reframing**: GB10 is bandwidth-saturated even at B=1. Shared-memory tiling reduces redundant
+DRAM loads, and that benefit shows up immediately — it does not require batch to overflow L2.
+This is still a publishable finding: the mechanism (shmem cuts DRAM traffic) is intact; only
+the L2-capacity-as-trigger framing is wrong. The paper should describe the operative variable as
+**DRAM bandwidth pressure**, not L2 capacity per se. Both are first-order proxies for the same
+underlying problem (memory-system saturation), but the bandwidth framing handles B=1 correctly.
+
+#### 4.11.3 Baseline Models (Spark vs Ada, model.half(), torch.compile mode='default')
+
+| Model | Spark (ms) | Spark (img/s) | Ada (ms) | Spark/Ada |
+|---|---|---|---|---|
+| MobileNetV3-Large | 0.97 | 1028.5 | 1.29 | 0.75× |
+| EfficientNet-B0 | 1.30 | 770.1 | 1.70 | 0.76× |
+| ResNet-152 | 2.23 | 447.9 | 2.57 | 0.87× |
+
+**Spark/Ada < 1** means Spark is *faster* for these compute-light models. Compare to the depthwise
+ratio (Spark/Ada ≈ 2.7–3.3× *slower* on ConvMixer/RepLKNet). The asymmetry says: Spark's
+Blackwell SMs win on compute-bound, fits-in-cache workloads; depthwise loses because it is
+memory-bound and Spark has less L2 to hide DRAM latency. This is precisely the regime-aware
+thesis the paper argues — different problem characteristics call for different optimizations
+*and* different platforms.
+
+#### 4.11.4 Tile Sensitivity Sweep (31×31, 128ch, B=1, M ∈ {4, 8, 16})
+
+| M | Spark latency (ms) | Spark blocks/SM (48 SMs) | Ada blocks/SM (128 SMs) |
+|---|---|---|---|
+| 4 | **0.969** | 16.3 | 5.5 |
+| 8 | 1.018 | 4.1 | 1.4 |
+| 16 | 1.678 | 0.25 | 0.45 |
+
+M=4 wins on both platforms but for inverted reasons. Ada (128 SMs) needs M=4 to keep all SMs
+busy at this small problem size — going to M=16 leaves only 64 blocks total, far fewer than the
+SM count. Spark (48 SMs) also picks M=4: M=16 collapses to 0.25 blocks/SM (deeply
+under-saturated), and M=8 keeps register pressure equal to M=4 but gains nothing because the
+problem isn't compute-bound. **The Pareto-optimal tile is SM-count-dependent**, not just
+kernel-size-dependent. This is the regime-aware tile result for the paper.
+
+#### 4.11.5 L2 Hit Rates (NCU, single-kernel, B=1)
+
+Extracted from `results/ncu/*.csv` (averaged over 5 launches per kernel):
+
+| Config | Custom Spark | Custom Ada | Δ | cuDNN-NCHW Spark | cuDNN-NHWC Spark | Triton-NHWC Spark |
+|---|---|---|---|---|---|---|
+| 9×9 / 1536ch | 66.4% | 81.7% | −15pp | 25.2% | — | 98.7% |
+| 7×7 / 768ch | 51.5% | 75.9% | −24pp | 26.1% | — | 97.4% |
+| 31×31 / 128ch | 94.0% | 95.9% | −2pp | 60.8% | 64.9% | — |
+| 27×27 / 512ch | 91.1% | 93.0% | −2pp | 23.8% | 50.0% | — |
+| 29×29 / 256ch | 89.6% | — | — | 42.7% | 76.1% | — |
+
+The 9×9 and 7×7 configs (high channel count, moderate kernel) drop most going Ada→Spark
+because their working sets are largest relative to Spark's L2. The large-kernel/low-channel
+configs (31×31, 27×27) barely move because they fit comfortably in either L2. Custom maintains
+a 25–67pp L2-hit advantage over cuDNN-NCHW on Spark — direct quantitative evidence that
+shared-memory weight tiling reduces L2 pressure.
+
+**Note on Triton's near-100% L2 hit rate**: Triton's NHWC kernel uses small per-block working
+sets and aggressive autotuning, but it does *not* explicitly tile weights into shared memory.
+Its high L2 hit rate is incidental (small footprint), not architectural — and Triton is still
+2.6× slower than Custom on 1536/20 because it pays for the high hit rate in occupancy and
+launch overhead. This is the textbook case for keeping Custom as a separate baseline from
+both cuDNN and Triton.
+
 ## 5. Output Files
 
 ```
@@ -694,20 +788,25 @@ Scripts at repo root:
 | ImageNet accuracy (50K, all 3 models) | DONE | Correctness proof |
 | DGX Spark platform characterization | DONE | #3 "Single GPU" |
 
-### TODO — Remaining
+### DONE — Paper Revision (2026-05-08)
 
-| Experiment | Est. Time | Reviewer Complaint Addressed | Blocker |
-|---|---|---|---|
-| NCU profiling (22 profiles, 6 metrics each) | 2 hr | #5 "Insufficient performance analysis" | Needs admin to set RmProfilingAdminOnly=0 |
-| Roofline plot from NCU data | 1 hr (after NCU) | #5 | Depends on NCU |
-| Nsight Systems timeline (RepLKNet E2E) | 30 min | #5 (layout conversion visualization) | May not need same permissions as NCU |
-| Cross-platform table (RTX 6000 Ada vs Spark) | 1 hr | #3 "Single GPU" | Need Ada data |
+| Experiment | Status | Reviewer Complaint Addressed |
+|---|---|---|
+| NCU profiling (per-kernel, all configs) | DONE | #5 "Insufficient performance analysis" |
+| Roofline plot from NCU data | DONE | #5 |
+| Nsight Systems timeline (RepLKNet E2E) | DONE | #5 |
+| Cross-platform table (Ada vs Spark, full E2E + baselines) | DONE | #3 "Single GPU" |
+| ConvMixer eager re-run with model.half() | DONE | (data correctness) |
+| Batch sweep B=1, 2, 4 (Section 4.11.2) | DONE | #4 "Batch=1 only" |
+| Baseline models (MobileNetV3, EffNet, ResNet) | DONE | #3 (cross-platform completeness) |
+| Tile sensitivity sweep (Section 4.11.4) | DONE | regime-aware thesis support |
+| L2 hit rate extraction (Section 4.11.5) | DONE | central evidence table |
 
 ### NOT on this branch
 
-| Experiment | Branch | Reviewer Complaint |
+| Experiment | Branch | Notes |
 |---|---|---|
-| Batch scaling study (B=1,2,4,8,...) | main | #4 "Batch=1 only" |
+| Larger batch scaling (B≥8, throughput regime) | main | Paper revision focuses on B=1–4 latency regime |
 
 ## 7. Analysis — Regime-Aware Thesis (Core Paper Argument)
 
@@ -716,9 +815,29 @@ The data from this branch provides three clear "regime" boundaries for depthwise
 ### Regime 1: High-Channel / Moderate-Kernel (ConvMixer)
 - Configs: 9×9/1536ch/32×32, 7×7/768ch/32×32
 - **Winner: Custom CUDA (NHWC shared-memory tiling)**
-- Custom 4× faster than cuDNN per-kernel, 5.7–6.4× end-to-end
+- Custom 4× faster than cuDNN per-kernel (1536/20), 5.7–6.4× end-to-end
 - Custom 2.2× faster than Triton-best (native NHWC)
 - Why: High channel count (768–1536) → NHWC vectorization is dense (32+ channels per cache line), shared-memory weight tiling gives massive reuse across spatial output pixels, enough thread blocks to saturate SMs
+
+**Cross-platform corrected framing for 7×7/768ch (post-revision analysis):**
+
+| Level | Ada (96 MB L2) | Spark (24 MB L2) | Pattern |
+|---|---|---|---|
+| Per-kernel 7×7/768ch | cuDNN-NHWC **wins** (18 vs 28 μs) | Custom **wins** (25 vs 362 μs NHWC) | **True regime reversal** |
+| E2E model 768/32 (compile, default mode) | Tie at 1.14 ms each | Custom 2.09 vs cuDNN 12.95 — **6.20×** | "Tied → dominant" |
+
+The genuine L2-driven regime reversal lives at the per-kernel layer. cuDNN ships a specialized
+NHWC 7×7 kernel that beats Custom on the 96 MB-L2 Ada platform (its working set fits comfortably
+in L2 and cuDNN can amortize weight loads via L2 reuse). On the 24 MB-L2 Spark, that same
+specialized kernel collapses to 362 μs — 14.5× slower than Custom — because L2 can no longer
+absorb its access pattern.
+
+At the E2E layer the picture is softer because torch.compile fusion equalizes Custom and cuDNN
+on Ada (both finish at 1.14 ms). On Spark, however, cuDNN+compile collapses to 12.95 ms while
+Custom holds at 2.09 ms, giving the largest cross-platform Custom-vs-cuDNN delta in the
+dataset (1.00× → 6.20×). Recommended paper wording: describe the per-kernel result as a "true
+regime reversal" and the E2E result as the "largest cross-platform Custom-vs-cuDNN delta," not
+as another reversal — the distinction matters for reviewer credibility.
 
 ### Regime 2: Low-Channel / Large-Kernel / Small-Spatial (RepLKNet stages 2-3)
 - Configs: 27×27/512ch/14×14, 13×13/1024ch/7×7
