@@ -67,6 +67,13 @@ torch.library.define(
     "(Tensor input, Tensor weight) -> Tensor",
 )
 
+# EXPERIMENTAL: region-templated v2 of the 32x32x1536 9x9 kernel.
+# Selected at runtime via env var DEPTHWISE_9X9_VARIANT=v2 (default: v1).
+torch.library.define(
+    "depthwise::conv2d_32_1536_9_v2",
+    "(Tensor input, Tensor weight) -> Tensor",
+)
+
 torch.library.define(
     "depthwise::conv2d_32_768_7",
     "(Tensor input, Tensor weight) -> Tensor",
@@ -88,6 +95,14 @@ def _depthwise_conv2d_32_1536_9_impl(input, weight):
     ops = _load_kernels()
     output = torch.empty_like(input)
     ops.depthwise_forward_32_1536_9(input, weight, output, 32, 32, 1536, 9)
+    return output
+
+
+@torch.library.impl("depthwise::conv2d_32_1536_9_v2", "default")
+def _depthwise_conv2d_32_1536_9_v2_impl(input, weight):
+    ops = _load_kernels()
+    output = torch.empty_like(input)
+    ops.depthwise_forward_32_1536_9_v2(input, weight, output, 32, 32, 1536, 9)
     return output
 
 
@@ -120,6 +135,10 @@ def _depthwise_conv2d_32_1536_13_impl(input, weight):
 
 @torch.library.register_fake("depthwise::conv2d_32_1536_9")
 def _depthwise_conv2d_32_1536_9_fake(input, weight):
+    return torch.empty_like(input)
+
+@torch.library.register_fake("depthwise::conv2d_32_1536_9_v2")
+def _depthwise_conv2d_32_1536_9_v2_fake(input, weight):
     return torch.empty_like(input)
 
 @torch.library.register_fake("depthwise::conv2d_32_768_7")
@@ -164,9 +183,12 @@ class CustomDepthwiseConv2d(nn.Module):
         torch.float16, memory_format=torch.channels_last
     """
 
+    # 32x32x1536 9x9 op selected by DEPTHWISE_9X9_VARIANT env var (default v1).
     SUPPORTED_CONFIGS = {
         (768, 7, 32): 'depthwise::conv2d_32_768_7',
-        (1536, 9, 32): 'depthwise::conv2d_32_1536_9',
+        (1536, 9, 32): ('depthwise::conv2d_32_1536_9_v2'
+                        if os.environ.get('DEPTHWISE_9X9_VARIANT', 'v1') == 'v2'
+                        else 'depthwise::conv2d_32_1536_9'),
         (1536, 9, 16): 'depthwise::conv2d_16_1536_9',
         (1536, 13, 32): 'depthwise::conv2d_32_1536_13',
     }
@@ -217,6 +239,8 @@ class CustomDepthwiseConv2d(nn.Module):
 
         if self.op_name == 'depthwise::conv2d_32_1536_9':
             output = torch.ops.depthwise.conv2d_32_1536_9(x, self.weight)
+        elif self.op_name == 'depthwise::conv2d_32_1536_9_v2':
+            output = torch.ops.depthwise.conv2d_32_1536_9_v2(x, self.weight)
         elif self.op_name == 'depthwise::conv2d_32_768_7':
             output = torch.ops.depthwise.conv2d_32_768_7(x, self.weight)
         elif self.op_name == 'depthwise::conv2d_16_1536_9':

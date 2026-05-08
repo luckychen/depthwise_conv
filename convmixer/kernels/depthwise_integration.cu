@@ -422,6 +422,315 @@ void depthwise_forward_32_1536_9(half* inputTensor,
 
 
 //=============================================================================
+// 32×32×1536, 9×9 kernel V2 (EXPERIMENTAL — region-specialized via templates)
+// Template params: TOP (blockI==0), BOT (blockI==24).
+// Three instantiations dispatched by blockIdx.x: <true,false>, <false,true>, <false,false>.
+// Eliminates "if (blockI > 0)" and "if (blockI < 24)" outer branches at compile time;
+// simplifies Iter0 inner clamps and a cp.async bound check. Inner-axis Iter3 min and
+// column clamps remain runtime (would require LEFT/RIGHT templating to fold).
+//=============================================================================
+template<bool TOP, bool BOT>
+__device__ __forceinline__ void depthwise_32_1536_9_body_v2(
+	half* inputTensor, const half* weight, half* outputTensor,
+	int B, int batchStride, half* sharedMem)
+{
+	half* weightCache = sharedMem;
+	half* inputCacheBuf[2];
+	inputCacheBuf[0] = sharedMem + 9 * 9 * 64;
+	inputCacheBuf[1] = sharedMem + 9 * 9 * 64 + 4096;
+
+	int tid = threadIdx.x;
+	int warpLane = tid & 31;
+	int warpIdx = tid >> 5;
+
+	int gridCh = 24;
+	int batchGroupIdx = blockIdx.z / gridCh;
+	int blockCh = (blockIdx.z % gridCh) * 64;
+
+	int blockI = blockIdx.x * 8;
+	int blockJ = blockIdx.y * 8;
+
+	int warpI = __shfl_sync(0xffffffff, warpIdx / 8, 0);
+	int warpJ = __shfl_sync(0xffffffff, warpIdx % 8, 0);
+
+	const half2* weightGlobal = reinterpret_cast<const half2*>(weight);
+	half2* weightCacheHalf2 = reinterpret_cast<half2*>(weightCache);
+
+	for (int phase = 0; phase < 5; ++phase) {
+		int loadIdx = tid + phase * 512;
+		int ki = loadIdx / (9 * 32);
+		int rem = loadIdx % (9 * 32);
+		int kj = rem / 32;
+		int chIdx = rem % 32;
+		int globalIdx = (ki * 9 + kj) * 1536 + blockCh + chIdx * 2;
+		weightCacheHalf2[loadIdx] = weightGlobal[globalIdx / 2];
+	}
+	if (tid < 32) {
+		int loadIdx = tid + 2560;
+		int ki = loadIdx / (9 * 32);
+		int rem = loadIdx % (9 * 32);
+		int kj = rem / 32;
+		int chIdx = rem % 32;
+		int globalIdx = (ki * 9 + kj) * 1536 + blockCh + chIdx * 2;
+		weightCacheHalf2[loadIdx] = weightGlobal[globalIdx / 2];
+	}
+
+	__syncthreads();
+
+	int outI1 = blockI + warpI;
+	int outI2 = blockI + warpI + 2;
+	int outI3 = blockI + warpI + 4;
+	int outI4 = blockI + warpI + 6;
+	int outJ = blockJ + warpJ;
+
+	int inJ_start = max(warpJ, 4 - blockJ);
+	int inJ_end = min(warpJ + 9, 36 - blockJ);
+
+	int tileCol = tid / 32;
+	int tileLane = tid % 32;
+
+	int batchEnd = min(batchGroupIdx * BATCH_GROUP_9x9 + BATCH_GROUP_9x9, B);
+	for (int bg = batchGroupIdx * BATCH_GROUP_9x9; bg < batchEnd; ++bg) {
+		half2* inputBaseH2 = reinterpret_cast<half2*>(inputTensor + bg * batchStride);
+		half2* outBaseH2 = reinterpret_cast<half2*>(outputTensor + bg * batchStride);
+
+		half2 acc1 = __float2half2_rn(0.0f);
+		half2 acc2 = __float2half2_rn(0.0f);
+		half2 acc3 = __float2half2_rn(0.0f);
+		half2 acc4 = __float2half2_rn(0.0f);
+
+		int outOff1 = (outI1 * 32 + outJ) * 1536 + blockCh;
+		int outOff2 = (outI2 * 32 + outJ) * 1536 + blockCh;
+		int outOff3 = (outI3 * 32 + outJ) * 1536 + blockCh;
+		int outOff4 = (outI4 * 32 + outJ) * 1536 + blockCh;
+
+		half2* inputCacheHalf2;
+		half2* nextCacheHalf2;
+		int curBuf = 0;
+
+		// Iter0 — boundary upper-half (only when !TOP)
+		if constexpr (!TOP) {
+			inputCacheHalf2 = reinterpret_cast<half2*>(inputCacheBuf[0]);
+			for (int row = 0; row < 4; ++row) {
+				int globalI = blockI - 4 + row;        // !TOP => blockI>=8 => globalI>=4
+				int globalJ = blockJ - 4 + tileCol;
+				if (globalJ >= 0 && globalJ < 32) {
+					int offset = (globalI * 32 + globalJ) * 1536 + blockCh;
+					inputCacheHalf2[(row * 16 + tileCol) * 32 + tileLane] = inputBaseH2[offset / 2 + tileLane];
+				}
+			}
+			__syncthreads();
+
+			nextCacheHalf2 = reinterpret_cast<half2*>(inputCacheBuf[1]);
+			for (int row = 0; row < 4; ++row) {
+				int globalI = blockI + row;
+				int globalJ = blockJ - 4 + tileCol;
+				if (globalJ >= 0 && globalJ < 32) {
+					int offset = (globalI * 32 + globalJ) * 1536 + blockCh;
+					uint32_t shmem_addr = __cvta_generic_to_shared(&nextCacheHalf2[(row * 16 + tileCol) * 32 + tileLane]);
+					const half2* src = &inputBaseH2[offset / 2 + tileLane];
+					asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" :: "r"(shmem_addr), "l"(src));
+				}
+			}
+			asm volatile("cp.async.commit_group;\n");
+
+			{
+				// !TOP => 4 - blockI <= -4 <= warpI, so clamps reduce to warpI / warpI+2
+				int inI_start_p1 = warpI;
+				int inI_start_p2 = warpI + 2;
+				for (int inI = 0; inI < 4; ++inI) {
+					for (int inJ = inJ_start; inJ < inJ_end; ++inJ) {
+						half2 inVal = inputCacheHalf2[(inI * 16 + inJ) * 32 + warpLane];
+						if (inI >= inI_start_p1) {
+							int wI = inI - warpI;
+							int wJ = inJ - warpJ;
+							acc1 = __hfma2(inVal, weightCacheHalf2[(wI * 9 + wJ) * 32 + warpLane], acc1);
+						}
+						if (inI >= inI_start_p2) {
+							int wI = inI - warpI - 2;
+							int wJ = inJ - warpJ;
+							acc2 = __hfma2(inVal, weightCacheHalf2[(wI * 9 + wJ) * 32 + warpLane], acc2);
+						}
+					}
+				}
+			}
+
+			asm volatile("cp.async.wait_group 0;\n");
+			__syncthreads();
+			curBuf = 1;
+		} else {
+			inputCacheHalf2 = reinterpret_cast<half2*>(inputCacheBuf[0]);
+			for (int row = 0; row < 4; ++row) {
+				int globalJ = blockJ - 4 + tileCol;
+				if (globalJ >= 0 && globalJ < 32) {
+					int offset = (blockI + row) * 32 * 1536 + globalJ * 1536 + blockCh;
+					inputCacheHalf2[(row * 16 + tileCol) * 32 + tileLane] = inputBaseH2[offset / 2 + tileLane];
+				}
+			}
+			__syncthreads();
+			curBuf = 0;
+		}
+
+		// Iter1 — always runs
+		inputCacheHalf2 = reinterpret_cast<half2*>(inputCacheBuf[curBuf]);
+		nextCacheHalf2 = reinterpret_cast<half2*>(inputCacheBuf[1 - curBuf]);
+
+		for (int row = 0; row < 4; ++row) {
+			int globalI = blockI + 4 + row;
+			int globalJ = blockJ - 4 + tileCol;
+			if (globalJ >= 0 && globalJ < 32) {
+				int offset = (globalI * 32 + globalJ) * 1536 + blockCh;
+				uint32_t shmem_addr = __cvta_generic_to_shared(&nextCacheHalf2[(row * 16 + tileCol) * 32 + tileLane]);
+				const half2* src = &inputBaseH2[offset / 2 + tileLane];
+				asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" :: "r"(shmem_addr), "l"(src));
+			}
+		}
+		asm volatile("cp.async.commit_group;\n");
+
+		{
+			for (int inI = 0; inI < 4; ++inI) {
+				for (int inJ = inJ_start; inJ < inJ_end; ++inJ) {
+					half2 inVal = inputCacheHalf2[(inI * 16 + inJ) * 32 + warpLane];
+					int wJ = inJ - warpJ;
+					acc1 = __hfma2(inVal, weightCacheHalf2[((inI - warpI + 4) * 9 + wJ) * 32 + warpLane], acc1);
+					acc2 = __hfma2(inVal, weightCacheHalf2[((inI - warpI + 2) * 9 + wJ) * 32 + warpLane], acc2);
+					if (inI >= warpI) {
+						acc3 = __hfma2(inVal, weightCacheHalf2[((inI - warpI) * 9 + wJ) * 32 + warpLane], acc3);
+					}
+					if (inI >= warpI + 2) {
+						acc4 = __hfma2(inVal, weightCacheHalf2[((inI - warpI - 2) * 9 + wJ) * 32 + warpLane], acc4);
+					}
+				}
+			}
+		}
+
+		asm volatile("cp.async.wait_group 0;\n");
+		__syncthreads();
+		curBuf = 1 - curBuf;
+
+		// Iter2 — compute always; cp.async + Iter3 only when !BOT
+		inputCacheHalf2 = reinterpret_cast<half2*>(inputCacheBuf[curBuf]);
+		nextCacheHalf2 = reinterpret_cast<half2*>(inputCacheBuf[1 - curBuf]);
+
+		if constexpr (!BOT) {
+			for (int row = 0; row < 4; ++row) {
+				int globalI = blockI + 8 + row;        // !BOT => blockI<=16 => globalI<=27<32
+				int globalJ = blockJ - 4 + tileCol;
+				if (globalJ >= 0 && globalJ < 32) {
+					int offset = (globalI * 32 + globalJ) * 1536 + blockCh;
+					uint32_t shmem_addr = __cvta_generic_to_shared(&nextCacheHalf2[(row * 16 + tileCol) * 32 + tileLane]);
+					const half2* src = &inputBaseH2[offset / 2 + tileLane];
+					asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" :: "r"(shmem_addr), "l"(src));
+				}
+			}
+		}
+		asm volatile("cp.async.commit_group;\n");
+
+		{
+			for (int inI = 0; inI < 4; ++inI) {
+				for (int inJ = inJ_start; inJ < inJ_end; ++inJ) {
+					half2 inVal = inputCacheHalf2[(inI * 16 + inJ) * 32 + warpLane];
+					int wJ = inJ - warpJ;
+					if (inI <= warpI) {
+						acc1 = __hfma2(inVal, weightCacheHalf2[((inI - warpI + 8) * 9 + wJ) * 32 + warpLane], acc1);
+					}
+					if (inI <= warpI + 2) {
+						acc2 = __hfma2(inVal, weightCacheHalf2[((inI - warpI + 6) * 9 + wJ) * 32 + warpLane], acc2);
+					}
+					acc3 = __hfma2(inVal, weightCacheHalf2[((inI - warpI + 4) * 9 + wJ) * 32 + warpLane], acc3);
+					acc4 = __hfma2(inVal, weightCacheHalf2[((inI - warpI + 2) * 9 + wJ) * 32 + warpLane], acc4);
+				}
+			}
+		}
+
+		asm volatile("cp.async.wait_group 0;\n");
+
+		// Iter3 — only when !BOT
+		if constexpr (!BOT) {
+			__syncthreads();
+			curBuf = 1 - curBuf;
+			inputCacheHalf2 = reinterpret_cast<half2*>(inputCacheBuf[curBuf]);
+
+			{
+				int inI_end_p3, inI_end_p4;
+				if constexpr (TOP) {
+					// blockI=0 => 24-blockI=24; warpI+3<=10<24, no clamp needed
+					inI_end_p3 = warpI + 1;
+					inI_end_p4 = warpI + 3;
+				} else {
+					// blockI in {8,16} => 24-blockI in {16,8}; runtime min
+					inI_end_p3 = min(warpI + 1, 24 - blockI);
+					inI_end_p4 = min(warpI + 3, 24 - blockI);
+				}
+				for (int inI = 0; inI < 4; ++inI) {
+					if (inI >= inI_end_p4) break;
+					for (int inJ = inJ_start; inJ < inJ_end; ++inJ) {
+						half2 inVal = inputCacheHalf2[(inI * 16 + inJ) * 32 + warpLane];
+						int wJ = inJ - warpJ;
+						if (inI < inI_end_p3) {
+							acc3 = __hfma2(inVal, weightCacheHalf2[((inI - warpI + 8) * 9 + wJ) * 32 + warpLane], acc3);
+						}
+						if (inI < inI_end_p4) {
+							acc4 = __hfma2(inVal, weightCacheHalf2[((inI - warpI + 6) * 9 + wJ) * 32 + warpLane], acc4);
+						}
+					}
+				}
+			}
+		}
+
+		outBaseH2[outOff1 / 2 + warpLane] = acc1;
+		outBaseH2[outOff2 / 2 + warpLane] = acc2;
+		outBaseH2[outOff3 / 2 + warpLane] = acc3;
+		outBaseH2[outOff4 / 2 + warpLane] = acc4;
+
+		__syncthreads();
+	}
+}
+
+__global__ void __launch_bounds__(512, 2)
+depthwise_32_1536_9_kernel_v2(half* inputTensor,
+                               const half* weight,
+                               half* outputTensor,
+                               int B,
+                               int batchStride)
+{
+	extern __shared__ half sharedMem[];
+	if (blockIdx.x == 0) {
+		depthwise_32_1536_9_body_v2<true, false>(inputTensor, weight, outputTensor, B, batchStride, sharedMem);
+	} else if (blockIdx.x == 3) {
+		depthwise_32_1536_9_body_v2<false, true>(inputTensor, weight, outputTensor, B, batchStride, sharedMem);
+	} else {
+		depthwise_32_1536_9_body_v2<false, false>(inputTensor, weight, outputTensor, B, batchStride, sharedMem);
+	}
+}
+
+void depthwise_forward_32_1536_9_v2(half* inputTensor,
+		const half* weight,
+		half* outputTensor,
+		int tensorHeight,
+		int tensorWidth,
+		int Ch,
+		int windowSize,
+		int B,
+		int batchStride,
+		cudaStream_t stream) {
+
+	if (tensorHeight != 32 || tensorWidth != 32 || Ch != 1536 || windowSize != 9) {
+		std::cout << "Error: depthwise_forward_32_1536_9_v2 requires 32×32×1536 tensor with 9×9 kernel" << std::endl;
+		exit(1);
+	}
+
+	int gridCh = 24;
+	int numBatchGroups = (B + BATCH_GROUP_9x9 - 1) / BATCH_GROUP_9x9;
+	dim3 gridSize(4, 4, gridCh * numBatchGroups);
+	int threadSize = 512;
+	size_t sharedMemSize = (9 * 9 * 64 + 2 * 4 * 16 * 32 * 2) * sizeof(half);
+
+	depthwise_32_1536_9_kernel_v2<<<gridSize, threadSize, sharedMemSize, stream>>>(inputTensor, weight, outputTensor, B, batchStride);
+}
+
+
+//=============================================================================
 // 16×16×1536, 9×9 kernel (512-THREAD, 2 blocks/SM)
 // Using the 512-thread variant from depthWise_ch_1536_k_9_t_16_half_forward_512.cu
 //=============================================================================
@@ -767,6 +1076,28 @@ void depthwise_forward_32_1536_9_torch(
     );
 }
 
+void depthwise_forward_32_1536_9_v2_torch(
+    torch::Tensor input,
+    torch::Tensor weight,
+    torch::Tensor output,
+    int tensorHeight,
+    int tensorWidth,
+    int Ch,
+    int windowSize) {
+
+    int B = input.size(0);
+    int batchStride = tensorHeight * tensorWidth * Ch;
+    cudaStream_t stream = c10::cuda::getCurrentCUDAStream(input.device().index()).stream();
+
+    depthwise_forward_32_1536_9_v2(
+        reinterpret_cast<half*>(input.data_ptr<at::Half>()),
+        reinterpret_cast<const half*>(weight.data_ptr<at::Half>()),
+        reinterpret_cast<half*>(output.data_ptr<at::Half>()),
+        tensorHeight, tensorWidth, Ch, windowSize,
+        B, batchStride, stream
+    );
+}
+
 void depthwise_forward_16_1536_9_torch(
     torch::Tensor input,
     torch::Tensor weight,
@@ -805,6 +1136,7 @@ void depthwise_forward_32_1536_13_torch(
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("depthwise_forward_32_768_7", &depthwise_forward_32_768_7_torch, "Depthwise conv 32x32x768, 7x7 kernel");
     m.def("depthwise_forward_32_1536_9", &depthwise_forward_32_1536_9_torch, "Depthwise conv 32x32x1536, 9x9 kernel");
+    m.def("depthwise_forward_32_1536_9_v2", &depthwise_forward_32_1536_9_v2_torch, "Depthwise conv 32x32x1536, 9x9 kernel (v2 region-templated, EXPERIMENTAL)");
     m.def("depthwise_forward_16_1536_9", &depthwise_forward_16_1536_9_torch, "Depthwise conv 16x16x1536, 9x9 kernel");
     m.def("depthwise_forward_32_1536_13", &depthwise_forward_32_1536_13_torch, "Depthwise conv 32x32x1536, 13x13 kernel");
 }
