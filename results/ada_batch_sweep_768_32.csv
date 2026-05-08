@@ -1,0 +1,12 @@
+method,label,batch,latency_ms,throughput_img_s
+cudnn_nhwc,cuDNN NHWC + compile,1,1.287,776.8
+cudnn_nhwc,cuDNN NHWC + compile,4,3.513,1138.7
+cudnn_nhwc,cuDNN NHWC + compile,8,4.339,1843.9
+cudnn_nchw,cuDNN NCHW + compile,1,1.298,770.4
+cudnn_nchw,cuDNN NCHW + compile,4,5.044,793.1
+cudnn_nchw,cuDNN NCHW + compile,8,10.270,778.9
+triton,Triton + compile,1,1.915,522.3
+triton,Triton + compile,4,7.727,517.7
+custom,Custom + compile,1,1.276,783.9
+custom,Custom + compile,4,3.926,1018.9
+custom,Custom + compile,8,7.209,1109.7
