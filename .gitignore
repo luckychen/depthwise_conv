@@ -1,8 +1,41 @@
-#checkpoint 
-*.pth
-*.tar*
-
-# imagenet
-*/imagenet/
+# Python cache — avoid
 __pycache__/
 *.pyc
+*.pyo
+
+# CUDA build artifacts — avoid
+*.o
+*.so
+*.ptx
+
+# Large model checkpoints and weights — avoid
+*.pth
+*.tar
+*.ckpt
+*.safetensors
+
+# Torch inductor compile cache — avoid
+/torch_compile_cache/
+
+# JIT compile cache — avoid
+*.ninja_log
+*.ninja_deps
+
+# Claude Code — avoid
+.claude/
+
+# IDE — avoid
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS — avoid
+.DS_Store
+Thumbs.db
+
+# Downloaded/dataset dirs — avoid
+convmixer/data/
+
+# results/ — KEEP (performance profiles, benchmark logs, CSVs)
+# All result files are tracked; only large binary results go in results/README.md
