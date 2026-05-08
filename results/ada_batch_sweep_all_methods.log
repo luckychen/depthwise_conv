@@ -1,0 +1,92 @@
+========================================================================
+Batch Sweep: All Methods — ConvMixer-1536_20
+========================================================================
+Device:  NVIDIA RTX 6000 Ada Generation
+PyTorch: 2.9.1+cu128  Triton: 3.5.1
+Runs: 200 (trimmed ±5%)
+
+
+[cuDNN NHWC + compile]
+  Loading model...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+    torch.compile(mode='default')...
+  Warming up compile (B=1)...
+  Batch=1 ...
+    latency=6.992 ms   throughput=143.0 img/s
+  Batch=4 ...
+    latency=29.899 ms   throughput=133.8 img/s
+  Batch=8 ...
+    latency=64.217 ms   throughput=124.6 img/s
+
+[cuDNN NCHW + compile]
+  Loading model...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: False
+Total parameters: 51.63M
+    torch.compile(mode='default')...
+  Warming up compile (B=1)...
+  Batch=1 ...
+    latency=7.430 ms   throughput=134.6 img/s
+  Batch=4 ...
+    latency=12.767 ms   throughput=313.3 img/s
+  Batch=8 ...
+    latency=26.686 ms   throughput=299.8 img/s
+
+[Triton + compile]
+  Loading model...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+    torch.compile(mode='default')...
+  Warming up compile (B=1)...
+  Batch=1 ...
+    latency=4.325 ms   throughput=231.2 img/s
+  Batch=4 ...
+    latency=18.131 ms   throughput=220.6 img/s
+
+[Custom + compile]
+  Loading model...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+✓ Custom depthwise kernels loaded successfully (torch.library)
+    torch.compile(mode='default')...
+  Warming up compile (B=1)...
+  Batch=1 ...
+    latency=1.510 ms   throughput=662.4 img/s
+  Batch=4 ...
+W0508 15:11:54.844000 1127787 site-packages/torch/_dynamo/convert_frame.py:1358] [0/8] torch._dynamo hit config.recompile_limit (8)
+W0508 15:11:54.844000 1127787 site-packages/torch/_dynamo/convert_frame.py:1358] [0/8]    function: 'forward' (/home/chenchon/chConv/paper/latex/repo/convmixer/convmixer.py:129)
+W0508 15:11:54.844000 1127787 site-packages/torch/_dynamo/convert_frame.py:1358] [0/8]    last reason: 0/7: tensor 'x' size mismatch at index 0. expected 1, actual 4
+W0508 15:11:54.844000 1127787 site-packages/torch/_dynamo/convert_frame.py:1358] [0/8] To log all recompilation reasons, use TORCH_LOGS="recompiles".
+W0508 15:11:54.844000 1127787 site-packages/torch/_dynamo/convert_frame.py:1358] [0/8] To diagnose recompilation issues, see https://pytorch.org/docs/main/torch.compiler_troubleshooting.html
+    latency=6.559 ms   throughput=609.8 img/s
+  Batch=8 ...
+    latency=13.793 ms   throughput=580.0 img/s
+
+Results saved to /home/chenchon/chConv/paper/latex/repo/results/ada_batch_sweep_all_methods.csv
+
+========================================================================
+SUMMARY
+========================================================================
+Method                          B      Latency     Throughput
+------------------------------------------------------------
+cuDNN NHWC + compile            1       6.992 ms        143.0 img/s
+cuDNN NHWC + compile            4      29.899 ms        133.8 img/s
+cuDNN NHWC + compile            8      64.217 ms        124.6 img/s
+cuDNN NCHW + compile            1       7.430 ms        134.6 img/s
+cuDNN NCHW + compile            4      12.767 ms        313.3 img/s
+cuDNN NCHW + compile            8      26.686 ms        299.8 img/s
+Triton + compile                1       4.325 ms        231.2 img/s
+Triton + compile                4      18.131 ms        220.6 img/s
+Custom + compile                1       1.510 ms        662.4 img/s
+Custom + compile                4       6.559 ms        609.8 img/s
+Custom + compile                8      13.793 ms        580.0 img/s
+
+Done.
