@@ -1,0 +1,30 @@
+======================================================================
+Tile Sensitivity Sweep — 31×31 depthwise, 128ch, 56×56
+======================================================================
+Device:   NVIDIA GB10
+PyTorch:  2.11.0+cu128
+Runs:     500 (warmup=50)
+M values: [4, 8, 16]
+Cb values: [32]
+
+
+  M= 4, Cb= 32  (shmem=60KB)  — compiling...ok (max_diff=1.3750)  shmem=60.1KB  grid=(14,14,4)=784blk  benchmarking...  0.969 ms
+
+  M= 8, Cb= 32  (shmem=60KB)  — compiling...ok (max_diff=1.3750)  shmem=60.1KB  grid=(7,7,4)=196blk  benchmarking...  1.018 ms
+
+  M=16, Cb= 32  (shmem=60KB)  — compiling...ok (max_diff=1.3750)  shmem=60.1KB  grid=(4,4,4)=64blk  benchmarking...  1.678 ms
+
+======================================================================
+SUMMARY — 31×31 Tile Sensitivity (cold L2, ms per call)
+======================================================================
+   M   Cb    Latency     Shmem           Grid  Blocks
+----------------------------------------------------------------------
+   4   32     0.9694    60.1KB      (14,14,4)     784
+   8   32     1.0182    60.1KB        (7,7,4)     196
+  16   32     1.6776    60.1KB        (4,4,4)      64
+
+Results written to: results/spark_sensitivity_31x31.csv
+
+======================================================================
+DONE
+======================================================================

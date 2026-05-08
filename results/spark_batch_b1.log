@@ -1,0 +1,88 @@
+======================================================================
+ConvMixer-1536_20 Benchmark
+======================================================================
+Device: NVIDIA GB10
+PyTorch: 2.11.0+cu128, CuDNN: 91900
+Batch size: 1, FP16 channels_last, fp16_method=model_half
+
+  Loading 1536_20 CuDNN (eager)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+  Loading 1536_20 CuDNN (compile)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+  Loading 1536_20 Custom (eager)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Using the latest cached version of the dataset since ILSVRC/imagenet-1k couldn't be found on the Hugging Face Hub
+Found the latest cached dataset configuration 'default' at data/imagenet/ILSVRC___imagenet-1k/default/0.0.0/49e2ee26f3810fb5a7536bbf732a7b07389a47b5 (last modified on Mon Apr 27 11:59:08 2026).
+✓ Custom depthwise kernels loaded successfully (torch.library)
+  Loading 1536_20 Custom (compile)...
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+
+======================================================================
+LATENCY BENCHMARK
+======================================================================
+
+  CuDNN eager:
+Loading ImageNet from cache: ./data/imagenet
+  Pre-loading 250 batches to GPU...
+Using the latest cached version of the dataset since ILSVRC/imagenet-1k couldn't be found on the Hugging Face Hub
+Found the latest cached dataset configuration 'default' at data/imagenet/ILSVRC___imagenet-1k/default/0.0.0/49e2ee26f3810fb5a7536bbf732a7b07389a47b5 (last modified on Mon Apr 27 11:59:08 2026).
+  Warming up (50 batches)...
+  Measuring (200 batches)...
+    Latency:    25.46 ms
+    Throughput: 39.3 img/s
+
+  CuDNN + compile:
+Loading ImageNet from cache: ./data/imagenet
+  Pre-loading 250 batches to GPU...
+Using the latest cached version of the dataset since ILSVRC/imagenet-1k couldn't be found on the Hugging Face Hub
+Found the latest cached dataset configuration 'default' at data/imagenet/ILSVRC___imagenet-1k/default/0.0.0/49e2ee26f3810fb5a7536bbf732a7b07389a47b5 (last modified on Mon Apr 27 11:59:08 2026).
+  Warming up (50 batches)...
+  Measuring (200 batches)...
+    Latency:    24.19 ms
+    Throughput: 41.3 img/s
+
+  Custom eager:
+Loading ImageNet from cache: ./data/imagenet
+  Pre-loading 250 batches to GPU...
+Using the latest cached version of the dataset since ILSVRC/imagenet-1k couldn't be found on the Hugging Face Hub
+Found the latest cached dataset configuration 'default' at data/imagenet/ILSVRC___imagenet-1k/default/0.0.0/49e2ee26f3810fb5a7536bbf732a7b07389a47b5 (last modified on Mon Apr 27 11:59:08 2026).
+  Warming up (50 batches)...
+  Measuring (200 batches)...
+    Latency:    4.97 ms
+    Throughput: 201.4 img/s
+
+  Custom + compile:
+Loading ImageNet from cache: ./data/imagenet
+  Pre-loading 250 batches to GPU...
+  Warming up (50 batches)...
+  Measuring (200 batches)...
+    Latency:    4.33 ms
+    Throughput: 230.7 img/s
+
+======================================================================
+SUMMARY
+======================================================================
+
+Configuration                          Latency   Throughput   vs CuDNN
+----------------------------------------------------------------------
+CuDNN eager                            25.46 ms      39.3 img/s      1.00x
+CuDNN + compile                        24.19 ms      41.3 img/s      1.05x
+Custom eager                            4.97 ms     201.4 img/s      5.13x
+Custom + compile                        4.33 ms     230.7 img/s      5.87x
+
+======================================================================
+DONE
+======================================================================
