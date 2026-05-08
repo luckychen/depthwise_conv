@@ -1,212 +1,189 @@
-# DGX Spark — Experiment Plan
+# DGX Spark — Remaining Experiment Plan
 
-**Date**: 2026-05-08 (updated — batch methodology gap found, new experiments added)
-**Status**: ⚠ MOSTLY COMPLETE — batch sweep needs cuDNN-NCHW and Triton columns
+**Date**: 2026-05-08 (updated — expanded to all 3 models per Ada findings)
+**Status**: ⚠ Batch sweep needs cuDNN-NCHW + Triton for ALL 3 models
 **Branch**: SPARK
 **Context**: `SPARK_context.md` — read for full background.
 **Pair**: `RTX6000_Ada_plan.md` on main branch
 
 ---
 
-## 0. Headline Findings (Completed Work)
+## 0. Critical New Finding from Ada (2026-05-08 Full Batch Sweep)
 
-1. **Custom dominates on Spark across all configs.** ConvMixer-1536/20 Custom+compile = 4.26 ms vs
-   cuDNN+compile = 24.16 ms (**5.67×**). ConvMixer-768/32 Custom+compile = 2.09 ms vs cuDNN+compile =
-   12.95 ms (**6.20×**). RepLKNet-31B Custom+compile = 4.67 ms vs cuDNN+compile = 15.27 ms (**3.27×**).
+The Ada batch sweep across all 4 methods × 3 models revealed a cross-model pattern:
 
-2. **The L2 batch hypothesis was disconfirmed but yields a sharper claim.** Spark Custom eager
-   throughput: B=1 → 201.4, B=2 → 199.9, B=4 → 188.4 img/s. Throughput *decreases* with batch — the
-   GB10 is bandwidth-saturated even at B=1. Revised framing: **shared-memory tiling pays off when
-   DRAM bandwidth — not arithmetic — is the bottleneck.** The original L2-capacity-threshold form
-   was tested and refined into this broader BW-pressure form.
+> **cuDNN-NCHW (compile-decomposed to 768+ GEMMs) scales strongly with batch — but the magnitude
+> differs drastically by model.** 1536/20: 135→313 img/s (2.3× gain), 768/32: 770→793 (flat),
+> RepLKNet: 207→881 (4.3× gain). The difference tracks working-set size: larger models benefit
+> more from GEMM batch efficiency because each decomposed GEMM has larger M/N/K dimensions.
+> Custom's advantage vs cuDNN-NCHW narrows from 4.92× (B=1) to 1.95× (B=4) for 1536/20, and
+> from 1.91× to 1.02× for RepLKNet.
 
-3. **L2 hit rates quantitatively confirm the shmem-tiling story.** Custom holds 51--94% L2 hit on
-   Spark vs cuDNN-NCHW at 23--60%. Output: `results/spark_ncu_l2.csv`.
-
-4. **Per-kernel 7×7/768ch is the true regime reversal**: cuDNN-NHWC wins on Ada (18 vs 28 μs),
-   loses badly on Spark (362 vs 25 μs). At E2E, torch.compile fusion lifts Custom to a tie with
-   cuDNN on Ada (1.14 ms each), then dominates 6.20× on Spark.
-
-5. **Tile sensitivity (31×31/128ch) on Spark**: M=4 → 0.969 ms, M=8 → 1.018 ms, M=16 → 1.678 ms.
-   M=4 wins; optimal tile is SM-count-dependent.
+**The Spark question**: On a BW-constrained platform (~24 MB L2, ~273 GB/s), do these
+compile-decomposed GEMMs also scale, or does BW pressure cap them? The existing Spark batch
+data only covers 1536/20 Custom + cuDNN-NHWC. We need cuDNN-NCHW + Triton for all three models
+to test the cross-platform hypothesis.
 
 ---
 
-## 1. Critical Constraints
+## 1. Previously Completed Spark Work
 
-The SPARK branch carries fixes for CUDA stream (CUDA-graph compatibility) and layout conversion
-(remove permute/contiguous). **Do NOT revert these.** Clear stale JIT cache before running:
-
-```bash
-rm -rf ~/.cache/torch_extensions/*/depthwise_convmixer
-```
-
-Timing: use **per-iteration CUDA events** for all E2E benchmarks. Bulk timing is wrong for
-`reduce-overhead` mode (up to 4× error).
-
----
-
-## 2. Completed Experiments
-
-| Section | Description | Status |
-|---------|-------------|--------|
+| ID | Description | Status |
+|----|-------------|--------|
 | S1 | Port --fp16_method to convmixer/benchmark.py | ✅ commit a82dc34 |
 | S2 | Re-run ConvMixer 1536/20 + 768/32 with model.half() | ✅ |
-| S3 | Batch sweep B=1,2,4 — Custom + cuDNN-**NHWC** | ⚠ cuDNN-NCHW missing (see §3) |
+| S3 | Batch sweep B=1,2,4: Custom + cuDNN-NHWC, 1536/20 only | ⚠ Needs expansion |
 | S4 | Baseline models (MobileNetV3, EffNet, ResNet) | ✅ |
-| S5 | Tile sensitivity sweep | ✅ |
-| S6 | L2 hit rates from existing NCU data | ✅ |
-| S7 | Cross-platform comparison table | ✅ |
+| S5 | Tile sensitivity (31×31/128ch) | ✅ |
+| S6 | L2 hit rates from NCU data | ✅ |
+| S7 | Cross-platform comparison table | ⚠ Needs update |
 
 ---
 
-## 3. NEW EXPERIMENTS — Batch Sweep with cuDNN-NCHW and Triton
+## 2. NEW EXPERIMENTS — Full Cross-Model Batch Sweep
 
-### Why These Are Needed (C0 from DS_suggestion.md)
+### 2.1 cuDNN-NCHW Batch Scaling — All 3 Models (~45 min)
 
-The paper's stated methodology is: *"We report the best cuDNN configuration as the baseline."*
-The B=1 E2E tables follow this correctly. But the batch sweep in §5.6 silently uses cuDNN-NHWC
-(39.3 img/s at B=1), not cuDNN's best layout (NCHW). cuDNN-NCHW at B=1 is likely several times
-faster — we don't know because it was never measured.
+The single most important remaining experiment. On Ada, cuDNN-NCHW batch scaling varies from
+flat (768/32) to 2.3× (1536/20) to 4.3× (RepLKNet). On Spark, BW saturation should compress
+this range — prediction: all models flat or weakly scaling.
 
-Additionally, Triton has **zero** batch scaling data on Spark. If Triton scales better with batch
-than Custom does, the "Triton collapse" finding only holds at B=1.
-
-### 3.1 Measure cuDNN-NCHW Batch Scaling (~20 min)
-
-ConvMixer-1536/20, model.half(), real ImageNet, mode=default compile:
-
+**ConvMixer-1536/20 (9×9, 20 layers, 51.6M params):**
 ```bash
-# Need to port the --cudnn_layout nchw flag from Ada's convmixer/benchmark.py first,
-# OR manually construct an NCHW model and run the throughput function.
-
-# B=1
-python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 200 \
-    --device cuda:0 --fp16_method model_half --batch 1 --real_data \
-    --data_dir ./data/imagenet --cudnn_layout nchw \
-    2>&1 | tee results/spark_batch_cudnn_nchw_b1.log
-
-# B=2
-python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 200 \
-    --device cuda:0 --fp16_method model_half --batch 2 --real_data \
-    --data_dir ./data/imagenet --cudnn_layout nchw \
-    2>&1 | tee results/spark_batch_cudnn_nchw_b2.log
-
-# B=4
-python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 200 \
-    --device cuda:0 --fp16_method model_half --batch 4 --real_data \
-    --data_dir ./data/imagenet --cudnn_layout nchw \
-    2>&1 | tee results/spark_batch_cudnn_nchw_b4.log
+for B in 1 2 4; do
+    python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 200 \
+        --device cuda:0 --fp16_method model_half --batch $B --real_data \
+        --data_dir ./data/imagenet --cudnn_layout nchw \
+        2>&1 | tee results/spark_batch_cudnn_nchw_1536_b${B}.log
+done
 ```
 
-**If `--cudnn_layout nchw` doesn't exist yet**: Port it from Ada's `convmixer/benchmark.py` (cherry-pick the relevant commit from main), or manually modify the benchmark to skip channels_last conversion and pass NCHW tensors.
-
-Record: latency (ms) and throughput (img/s) at B=1, 2, 4.
-
-### 3.2 Measure Triton Batch Scaling (~20 min)
-
-ConvMixer-1536/20 with Triton depthwise, model.half(), real ImageNet:
-
+**ConvMixer-768/32 (7×7, 32 layers, 21.1M params):**
 ```bash
-# If a --triton_mode flag exists (port from Ada if needed):
-python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 200 \
-    --device cuda:0 --fp16_method model_half --batch 1 --real_data \
-    --data_dir ./data/imagenet --triton_mode \
-    2>&1 | tee results/spark_batch_triton_b1.log
-
-python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 200 \
-    --device cuda:0 --fp16_method model_half --batch 2 --real_data \
-    --data_dir ./data/imagenet --triton_mode \
-    2>&1 | tee results/spark_batch_triton_b2.log
+for B in 1 2 4; do
+    python convmixer/benchmark.py --model 768_32 --skip_accuracy --num_runs 200 \
+        --device cuda:0 --fp16_method model_half --batch $B --real_data \
+        --data_dir ./data/imagenet --cudnn_layout nchw \
+        2>&1 | tee results/spark_batch_cudnn_nchw_768_b${B}.log
+done
 ```
 
-Record: latency and throughput at B=1, B=2.
+**RepLKNet-31B (27-31×31, 24 layers, 79M params):**
+```bash
+for B in 1 2 4; do
+    python replknet/benchmark.py --device cuda:0 --num_runs 200 \
+        --fp16_method model_half --cudnn_layout nchw --batch $B \
+        --data_dir ./data/imagenet --real_data \
+        2>&1 | tee results/spark_batch_cudnn_nchw_replknet_b${B}.log
+done
+```
 
-### 3.3 Expected Findings
+### 2.2 Triton Batch Scaling — 1536/20 + 768/32 (~25 min)
 
-| Scenario | Interpretation |
-|----------|---------------|
-| cuDNN-NCHW scales similarly to NHWC (flat/declining) | BW-saturation confirmed across both cuDNN layouts |
-| cuDNN-NCHW scales BETTER with batch | Paper must acknowledge cuDNN's best layout mitigates BW pressure at batch>1 |
-| Triton throughput flat/declining | "Triton collapse" holds at all batch sizes |
-| Triton throughput IMPROVES with batch | Paper must acknowledge Triton recovers at batch>1 |
+RepLKNet Triton batch is skipped — Ada showed autotune issue for RepLKNet E2E.
 
-### 3.4 After Measuring
+```bash
+for B in 1 2; do
+    python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 200 \
+        --device cuda:0 --fp16_method model_half --batch $B --real_data \
+        --data_dir ./data/imagenet --triton_mode \
+        2>&1 | tee results/spark_batch_triton_1536_b${B}.log
 
-Update `results/spark_cross_platform_table.md` with the new batch columns.
-Update paper.tex Table `tab:batch` to include cuDNN-NCHW and Triton columns for both platforms.
+    python convmixer/benchmark.py --model 768_32 --skip_accuracy --num_runs 200 \
+        --device cuda:0 --fp16_method model_half --batch $B --real_data \
+        --data_dir ./data/imagenet --triton_mode \
+        2>&1 | tee results/spark_batch_triton_768_b${B}.log
+done
+```
 
----
+### 2.3 Custom + cuDNN-NHWC Batch Baseline — 768/32 (~15 min)
 
-## 4. What Was Skipped (Existing Data Reusable)
+Existing Spark batch sweep only covers 1536/20. Fill in 768/32:
 
-- Per-kernel benchmarks (`spark_kernel_comparison.csv`) — method-independent, reusable.
-- cuDNN layout study (`spark_cudnn_layouts.csv`) — direct FP16 tensors, reusable.
-- Triton baselines (`spark_triton_results.csv`) — direct FP16 tensors, reusable.
-- Compile-survival / NSYS — already model.half(), reusable.
-- NCU per-kernel profiling — already collected, reusable.
-- Roofline plot — derived from NCU data, reusable.
-- Accuracy validation — unchanged by FP16 method.
-
----
-
-## 5. ConvMixer-768/32 (7×7) — Corrected Framing
-
-| Level | Ada | Spark | Pattern |
-|---|---|---|---|
-| Per-kernel 7×7/768ch | cuDNN-NHWC **wins** (18 vs 28 μs) | Custom **wins** (25 vs 362 μs NHWC) | **True regime reversal** |
-| E2E model 768/32 (compile) | Tie at 1.14 ms each | Custom 2.09 vs cuDNN 12.95 — **6.20×** | "Tied → dominant" |
-
-**Recommended paper wording**: *"At the per-kernel level, K=7 marks an L2-driven regime
-reversal: cuDNN's specialized NHWC 7×7 kernel wins on the 96 MB-L2 Ada by 1.6× but loses on
-the 24 MB-L2 Spark by 14.5×. At the model level, torch.compile fusion equalizes Custom and
-cuDNN on Ada (tied at 1.14 ms), but Spark's L2 cannot absorb cuDNN's working set under the
-compile schedule — Custom wins by 6.20×, the largest cross-platform Custom-vs-cuDNN delta in
-the dataset."*
+```bash
+for B in 1 2 4; do
+    python convmixer/benchmark.py --model 768_32 --skip_accuracy --num_runs 200 \
+        --device cuda:0 --fp16_method model_half --batch $B --real_data \
+        --data_dir ./data/imagenet \
+        2>&1 | tee results/spark_batch_baseline_768_b${B}.log
+done
+```
 
 ---
 
-## 6. Execution Order
+## 3. Expected Cross-Platform Findings
 
-| Step | Description | Time | Depends On |
-|------|-------------|------|------------|
-| 1 | Port --cudnn_layout nchw and --triton_mode from Ada benchmark.py | 15 min | — |
-| 2 | cuDNN-NCHW batch sweep B=1,2,4 | 20 min | Step 1 |
-| 3 | Triton batch sweep B=1,2 | 20 min | Step 1 |
-| 4 | Update cross-platform table | 15 min | Steps 2-3 |
+| Model + Method | Ada pattern (96 MB, ~960 GB/s) | Predicted Spark pattern (~24 MB, ~273 GB/s) |
+|----------------|-------------------------------|------------------------------------------|
+| 1536/20 cuDNN-NCHW | Strong scaling (135→313, 2.3×) | **Flat** — GEMMs BW-saturated at B=1 |
+| 768/32 cuDNN-NCHW | Flat (770→793) | **Flat** — already compute-light |
+| RepLKNet cuDNN-NCHW | Strong scaling (207→881, 4.3×) | **Weak or flat** — largest working set, most BW pressure |
+| 768/32 cuDNN-NHWC | Strong scaling (777→1844, 2.4×) | **Weak** — specialized 7×7 kernel BW-capped |
+| Custom all models | Flat/declining | **Flat/declining** — BW-saturated at B=1 |
+| Triton all models | Flat/declining | **Flat/declining** — no cross-program shmem |
 
-**Total: ~1 hour.**
+### Refined cross-platform claim
+
+> **On Spark, all methods are BW-capped at B=1. Custom dominates through shmem weight
+> caching (5.89×-6.20× E2E). cuDNN-NCHW's compile-decomposed GEMMs cannot scale with
+> batch. On Ada, GEMM batch efficiency allows cuDNN-NCHW to partially recover at B≥4,
+> but Custom still leads at B=1 — the deployment target for latency-sensitive inference.
+> The governing variable is DRAM bandwidth pressure, with L2 hit rate as the tracker.**
+
+This is the cleanest version of the paper's thesis: Custom wins where BW matters; cuDNN-NCHW
+recovers only where BW is plentiful; the cross-platform magnitude difference IS the regime.
 
 ---
 
-## 7. Output Files
+## 4. Execution Order and Time Estimates
+
+| Step | Description | Time |
+|------|-------------|------|
+| 1 | Cherry-pick Ada batch-sweep commits (3f8ad12, ad55f01, 163920c) | 15 min |
+| 2 | cuDNN-NCHW batch: 1536/20 B=1,2,4 | 15 min |
+| 3 | cuDNN-NCHW batch: 768/32 B=1,2,4 | 15 min |
+| 4 | cuDNN-NCHW batch: RepLKNet B=1,2,4 | 15 min |
+| 5 | Triton batch: 1536/20 + 768/32 B=1,2 | 25 min |
+| 6 | 768/32 baseline (Custom + cuDNN-NHWC) B=1,2,4 | 15 min |
+| 7 | Build cross-platform batch comparison table | 20 min |
+
+**Total: ~2 hours**
+
+---
+
+## 5. What Can Be Skipped
+
+- Per-kernel benchmarks, cuDNN layout study, Triton baselines — method-independent, reusable
+- Compile-survival, NCU, roofline — already collected, reusable
+- Accuracy validation — unchanged
+- RepLKNet Triton batch — Ada confirmed autotune issue
+- Spark batch B=8 — Ada shows no additional pattern beyond B=4; B=1,2,4 is sufficient
+
+---
+
+## 6. Output Files Expected
 
 ```
 results/
-├── spark_1536_20_model_half.log             ✅
-├── spark_768_32_model_half.log              ✅
-├── spark_batch_b1.log                       ✅ (Custom + cuDNN-NHWC)
-├── spark_batch_b2.log                       ✅ (Custom + cuDNN-NHWC)
-├── spark_batch_b4.log                       ✅ (Custom + cuDNN-NHWC)
-├── spark_batch_cudnn_nchw_b1.log            ⬜ §3.1 — NEW
-├── spark_batch_cudnn_nchw_b2.log            ⬜ §3.1 — NEW
-├── spark_batch_cudnn_nchw_b4.log            ⬜ §3.1 — NEW
-├── spark_batch_triton_b1.log                ⬜ §3.2 — NEW
-├── spark_batch_triton_b2.log                ⬜ §3.2 — NEW
-├── spark_baselines_model_half.log           ✅
-├── spark_sensitivity_31x31.csv              ✅
-├── spark_ncu_l2.csv                         ✅
-├── spark_cross_platform_table.md            ⚠ Needs update after §3
+├── spark_batch_cudnn_nchw_1536_b1–b4.log      ⬜ §2.1
+├── spark_batch_cudnn_nchw_768_b1–b4.log       ⬜ §2.1
+├── spark_batch_cudnn_nchw_replknet_b1–b4.log  ⬜ §2.1
+├── spark_batch_triton_1536_b1–b2.log          ⬜ §2.2
+├── spark_batch_triton_768_b1–b2.log           ⬜ §2.2
+├── spark_batch_baseline_768_b1–b4.log         ⬜ §2.3
+├── spark_cross_platform_batch_table.csv       ⬜ §7
 │
-│ (reusable)
-├── spark_cudnn_layouts.csv                  ✅
-├── spark_triton_results.csv                 ✅
-├── spark_kernel_comparison.csv              ✅
-├── spark_ncu_metrics.csv                    ✅
-├── spark_roofline_plot.png                  ✅
-├── ncu/                                     ✅
-│
-│ (autocast-era — reference only)
-├── spark_convmixer_1536_20.txt              ⚠ reference only
-└── spark_convmixer_768_32.txt               ⚠ reference only
+│ (existing — reusable)
+├── spark_1536_20_model_half.log               ✅
+├── spark_768_32_model_half.log                ✅
+├── spark_batch_b1–b4.log                      ✅ (1536/20: Custom + cuDNN-NHWC)
+├── spark_baselines_model_half.log             ✅
+├── spark_sensitivity_31x31.csv                ✅
+├── spark_ncu_l2.csv                           ✅
+├── spark_cudnn_layouts.csv                    ✅
+├── spark_triton_results.csv                   ✅
+├── spark_kernel_comparison.csv                ✅
+├── spark_ncu_metrics.csv                      ✅
+├── spark_roofline_plot.png                    ✅
+└── ncu/                                       ✅
 ```
