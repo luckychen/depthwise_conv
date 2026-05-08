@@ -23,9 +23,11 @@ Generated: 2026-05-08 | Branch: SPARK | All: model.half(), channels_last, batch=
 | | **Custom + compile** | **1.77** | **4.67** | **2.64×** |
 | | Custom speedup vs CuDNN | **3.14×** | **3.93×** (vs eager) | — |
 
-**Note on 768/32 (7×7):** On Ada, cuDNN has a specialized NHWC 7×7 kernel that matches Custom+compile (1.14 ms each).
-On Spark, cuDNN compile degrades badly (12.95 ms) while Custom+compile stays fast (2.09 ms) — 6.20× Custom wins.
-This is the clearest demonstration of the L2 residency principle.
+**Note on 768/32 (7×7):** This config shows the largest cross-platform delta in Custom-vs-cuDNN ratio (1.00× → 6.20×).
+On Ada, cuDNN's specialized NHWC 7×7 kernel ties Custom+compile at 1.14 ms (per-kernel: cuDNN-NHWC actually wins, 18 vs 28 μs;
+torch.compile fusion lets Custom catch up E2E). On Spark, cuDNN+compile collapses to 12.95 ms while Custom holds at 2.09 ms.
+The true *regime reversal* is at the per-kernel level: cuDNN-NHWC wins on Ada (18 μs vs Custom 28 μs),
+loses on Spark (362 μs vs Custom 25 μs). At the model level the pattern is "tied → dominant", not strictly a reversal.
 
 ---
 
