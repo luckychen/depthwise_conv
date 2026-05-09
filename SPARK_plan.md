@@ -1,7 +1,7 @@
 # DGX Spark — Experiment Plan
 
 **Date**: 2026-05-08, updated 2026-05-09
-**Status**: S1–S7 complete. **S8 (compile-mode sweep) pending — see §3 below.**
+**Status**: S1–S7 complete. **S8 (compile-mode comparison) pending — see §3 below.**
 **Branch**: SPARK
 **Context**: `SPARK_context.md` — read for full background.
 **Pair**: `RTX6000_Ada_plan.md` on main branch
@@ -122,10 +122,10 @@ python -c "import torch; print(torch.__version__, 'cuDNN', torch.backends.cudnn.
 ### 3.4 Step S8 — Reduce-overhead measurement script
 
 A small standalone script is the simplest path (avoids modifying `convmixer/benchmark.py` which
-is used by both branches). Save the following as `spark_reduce_overhead_sweep.py` and run it.
+is used by both branches). Save the following as `spark_compile_mode.py` and run it.
 
 ```python
-# spark_reduce_overhead_sweep.py
+# spark_compile_mode.py
 import torch, time, sys, os, json
 import torchvision.models as tvm
 THIS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'convmixer')
@@ -197,15 +197,15 @@ for name, factory in cases:
     print(f"{name:<32} {t_d:>14.3f} {t_r:>17.3f} {sp:>11.2f}x")
     results[name] = {'default_ms': t_d, 'reduce_overhead_ms': t_r, 'ro_speedup': sp}
 
-with open('results/spark_reduce_overhead_sweep.json', 'w') as f:
+with open('results/spark_compile_mode.json', 'w') as f:
     json.dump(results, f, indent=2)
-print("\nWrote results/spark_reduce_overhead_sweep.json")
+print("\nWrote results/spark_compile_mode.json")
 ```
 
 Run:
 
 ```bash
-python spark_reduce_overhead_sweep.py 2>&1 | tee results/spark_reduce_overhead_sweep.log
+python spark_compile_mode.py 2>&1 | tee results/spark_compile_mode.log
 ```
 
 Expected runtime: ~10–15 min total (each compile-RO warmup is the slow part, ~30 s × 7 cases).
@@ -229,7 +229,7 @@ Expected runtime: ~10–15 min total (each compile-RO warmup is the slow part, ~
 
 ### 3.6 Decision rules / what to write up
 
-After Step S8 produces `results/spark_reduce_overhead_sweep.json`:
+After Step S8 produces `results/spark_compile_mode.json`:
 
 - **If predictions hold (RO speedup is small for ConvMixer/RepLKNet, large for baselines):**
   Add a "Compile mode" column to `spark_cross_platform_table.md` showing both `default` and
@@ -250,8 +250,8 @@ After Step S8 produces `results/spark_reduce_overhead_sweep.json`:
 ```
 results/
 ├── spark_env_pt211.txt                       ⬜ (Step 3.3)
-├── spark_reduce_overhead_sweep.log           ⬜ (Step 3.4 — printed table)
-└── spark_reduce_overhead_sweep.json          ⬜ (Step 3.4 — machine-readable)
+├── spark_compile_mode.log           ⬜ (Step 3.4 — printed table)
+└── spark_compile_mode.json          ⬜ (Step 3.4 — machine-readable)
 ```
 
 ---
