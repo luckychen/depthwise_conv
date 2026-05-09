@@ -250,7 +250,208 @@ results/
 
 ---
 
-## 8. Known Pitfalls
+## 8. Cross-Platform Launch-Overhead Investigation (added 2026-05-09)
+
+### 8.1 Why this section exists
+
+After the Spark numbers were published, we noticed a counterintuitive pattern in the cross-platform table (`results/spark_cross_platform_table.md`, baselines section):
+
+| Model | Ada (ms) | Spark (ms) | Spark/Ada |
+|-------|---------|-----------|-----------|
+| MobileNetV3-Large | 1.29 | **0.97** | 0.75× |
+| EfficientNet-B0 | 1.70 | **1.30** | 0.76× |
+| ResNet-152 | 2.57 | **2.23** | 0.87× |
+
+Ada has higher peak FP16 (91.1 TFLOPs vs ~125–209 on Spark, depending on which spec) and higher memory bandwidth (960 GB/s vs ~273 GB/s) — yet at B=1 Ada is *slower* on these three baselines. The compute-bound models (ConvMixer-1536/20, ConvMixer-768/32, RepLKNet-31B) all behave correctly: Ada wins by 2–3× as peak specs predict. The inversion is specific to launch-bound, small-kernel, B=1 inference.
+
+**Two non-mutually-exclusive hypotheses:**
+
+1. **Software-stack confound.** Ada baseline log was captured with `PyTorch 2.9.1 + cuDNN 9.10.02`. Spark used `PyTorch 2.11.0 + cuDNN 9.19.0`. Multiple dispatcher fast-paths and `torch.compile` overhead reductions landed in PT 2.10/2.11; cuDNN 9.19 has different graph-fusion heuristics. This alone could produce the gap.
+2. **Launch-overhead regime.** Sanity check on Ada numbers: ResNet-152 at B=1 = 11.5 GMACs / 2.57 ms = **9 TFLOPs achieved vs ~364 TFLOPs peak ≈ 2.4% utilization**. The GPU is idle ~97% of the time. In that regime, peak FLOPs/BW don't matter — the host→GPU launch path dominates. PCIe Gen4 (Ada) vs NVLink-C2C (Spark, Grace–Blackwell on package) is a plausible per-launch latency gap; with ResNet-152's ~150 kernel launches/forward, even 5 μs/launch = 0.75 ms.
+
+**Goal of §8 work:** disentangle (1) from (2) and report numbers that are no longer software-version-confounded. This is a direct response to anyone who reads the cross-platform table and asks "wait, how is Ada slower?"
+
+### 8.2 New finding from re-running on GB10 (2026-05-09)
+
+Side-channel finding worth checking on Ada too: on Spark, `cuDNN NCHW` is **3× faster than NHWC** for RepLKNet-31B. The Spark cross-platform table only reports the NHWC numbers, which artificially inflates the Custom-vs-cuDNN ratio.
+
+| RepLKNet-31B (B=1, model_half) | Spark (ms) |
+|---|---|
+| CuDNN NHWC eager | 18.12 |
+| CuDNN NHWC + compile | 15.19 |
+| **CuDNN NCHW eager** | **8.21** |
+| **CuDNN NCHW + compile** | **4.99** |
+| Custom + compile | 4.71 |
+
+So Custom+compile only beats cuDNN-NCHW-best by **1.06×** on Spark, not the 3.27× implied by the NHWC-only table. The Ada plan's §3.2 already shows cuDNN NCHW is the cuDNN best for RepLKNet on Ada (5.09 ms eager beats 7.63 NHWC eager). **Action: confirm the NCHW comparison is also up-to-date on Ada with PT 2.11 stack (Step 8.4).**
+
+### 8.3 Environment refresh (run first, ~5 min)
+
+```bash
+source /home/chenchon/miniconda3/etc/profile.d/conda.sh && conda activate cuda
+export CUDA_VISIBLE_DEVICES=1
+cd /home/chenchon/chConv/paper/latex/repo
+
+# Snapshot the old environment for record
+python -c "import torch; print('OLD:', torch.__version__, 'cuDNN', torch.backends.cudnn.version())" \
+    | tee results/ada_env_pt29.txt
+
+# Upgrade to match Spark stack
+pip install --upgrade \
+    torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
+    --index-url https://download.pytorch.org/whl/cu128
+
+python -c "import torch; print('NEW:', torch.__version__, 'cuDNN', torch.backends.cudnn.version())" \
+    | tee results/ada_env_pt211.txt
+# Expect: 2.11.0+cu128, cuDNN 91900
+```
+
+If the upgrade breaks the custom kernel build, clear the extension cache: `rm -rf ~/.cache/torch_extensions/py310_cu128/depthwise_*` and let it rebuild on first import.
+
+### 8.4 Step 8.4 — Re-run baselines with matched stack (~10 min)
+
+```bash
+python convmixer/benchmark.py --model 1536_20 --skip_accuracy --baselines \
+    --device cuda:0 --fp16_method model_half --num_runs 500 \
+    2>&1 | tee results/ada_baselines_pt211.log
+
+# Also re-confirm RepLKNet best-of-cuDNN with NCHW under new stack
+python replknet/benchmark.py --device cuda:0 --num_runs 200 \
+    --skip_verify --skip_accuracy \
+    2>&1 | tee results/ada_replknet_pt211.log
+```
+
+**Decision rule:**
+- If MobileNet/EfficientNet/ResNet-152 latencies *drop substantially* on Ada with PT 2.11 (e.g., ResNet-152 falls from 2.57 → ≤2.23 ms), the original "Spark wins" was largely a software-stack effect. Update §3.3 of this plan and the cross-platform table accordingly.
+- If they don't drop (gap persists), proceed to Steps 8.5–8.7 to confirm launch-overhead is the cause.
+
+Expected output table (fill in):
+
+| Model | Ada PT 2.9.1 (ms) | Ada PT 2.11 (ms) | Spark PT 2.11 (ms) | Δ stack |
+|-------|-------------------|------------------|--------------------|---------|
+| MobileNetV3-Large | 1.29 | ___ | 0.97 | ___ |
+| EfficientNet-B0 | 1.70 | ___ | 1.30 | ___ |
+| ResNet-152 | 2.57 | ___ | 2.23 | ___ |
+| ConvMixer-1536/20 (Custom+compile) | 1.59 | ___ | 4.32 | ___ |
+
+### 8.5 Step 8.5 — Batch sweep (kills the launch-bound regime, ~30 min)
+
+```bash
+for B in 1 4 16 32 64; do
+    python convmixer/benchmark.py --model 1536_20 --skip_accuracy --baselines \
+        --device cuda:0 --fp16_method model_half --batch $B --num_runs 200 \
+        2>&1 | tee results/ada_baselines_b${B}.log
+done
+```
+
+**Decision rule:** plot **throughput (img/s) vs batch** for ResNet-152 + MobileNetV3-Large on Ada and Spark. Predicted shape:
+
+- B=1: Spark may match or beat Ada (launch-bound).
+- B=16+: Ada pulls ahead by ~1.5–3× as compute/BW saturates.
+
+If that crossover is visible, launch-overhead is the dominant factor. Save plot to `results/ada_baseline_batch_scaling.png`.
+
+### 8.6 Step 8.6 — Nsight Systems profiling (definitive evidence, ~15 min)
+
+```bash
+# ResNet-152 launch-vs-kernel breakdown
+nsys profile --trace=cuda,nvtx,osrt --gpu-metrics-device=0 \
+    --force-overwrite=true \
+    -o results/ada_resnet152_nsys \
+    python -c "
+import torch, torchvision.models as tvm
+m = tvm.resnet152(weights=tvm.ResNet152_Weights.IMAGENET1K_V2)
+m = m.cuda().half().to(memory_format=torch.channels_last).eval()
+m = torch.compile(m, mode='default')
+x = torch.randn(1, 3, 224, 224, device='cuda', dtype=torch.float16
+                ).to(memory_format=torch.channels_last)
+with torch.no_grad():
+    for _ in range(200): m(x)         # warmup + compile
+    torch.cuda.synchronize()
+    torch.cuda.nvtx.range_push('measure')
+    for _ in range(200): m(x)
+    torch.cuda.synchronize()
+    torch.cuda.nvtx.range_pop()
+"
+nsys stats --report cudaapisum,gpukernsum results/ada_resnet152_nsys.nsys-rep \
+    | tee results/ada_resnet152_nsys_stats.txt
+```
+
+Run identically on Spark for comparison. **Compare:**
+
+- `gpukernsum` total → actual GPU compute time. Should be smaller on Ada (faster GPU).
+- `cudaapisum` total for `cudaLaunchKernel` → host-side launch cost.
+- Average gap between consecutive kernels (visible in nsys timeline).
+
+**If `cudaLaunchKernel` time + inter-kernel gaps explain the residual Ada–Spark difference, the launch-overhead hypothesis is confirmed.**
+
+### 8.7 Step 8.7 — CUDA Graph capture (eliminates launch overhead entirely, ~15 min)
+
+```bash
+python -c "
+import torch, time, torchvision.models as tvm
+m = tvm.resnet152(weights=tvm.ResNet152_Weights.IMAGENET1K_V2)
+m = m.cuda().half().to(memory_format=torch.channels_last).eval()
+x = torch.randn(1, 3, 224, 224, device='cuda', dtype=torch.float16
+                ).to(memory_format=torch.channels_last)
+
+with torch.no_grad():
+    for _ in range(50): m(x)
+    torch.cuda.synchronize()
+
+g = torch.cuda.CUDAGraph()
+with torch.no_grad(), torch.cuda.graph(g):
+    out = m(x)
+
+torch.cuda.synchronize()
+N = 1000
+t0 = time.perf_counter()
+for _ in range(N): g.replay()
+torch.cuda.synchronize()
+print(f'CUDA graph replay: {(time.perf_counter()-t0)/N*1000:.3f} ms')
+" 2>&1 | tee results/ada_resnet152_cudagraph.log
+```
+
+Run on both Ada and Spark. **Decision rule:**
+
+- **If both platforms collapse to similar latency** under CUDA graphs (gap shrinks to <10%), the original gap was purely launch overhead. The Spark "win" disappears once host overhead is removed.
+- **If Ada beats Spark under CUDA graphs by approximately the spec ratio** (e.g., Ada ≤ 0.5× Spark), that's the smoking gun: peak compute does win once launches are out of the way.
+
+This is the single most decisive experiment of §8. Run it first if pressed for time.
+
+### 8.8 Section to add to the paper
+
+Once Steps 8.4–8.7 are complete, add a new short subsection (§5.8 or appendix) titled something like *"Launch-overhead regime at B=1: when peak specs do not predict latency"*. Key claim:
+
+> At batch=1 with deeply layered, small-kernel networks (ResNet-152, MobileNetV3-Large), the inference latency is dominated by host-to-device kernel launch overhead, not by GPU compute. Under this regime, achieved utilization can be <5% of peak FP16 throughput. Tightly coupled host–accelerator architectures (e.g., Grace–Blackwell NVLink-C2C) can therefore outperform discrete PCIe-attached GPUs even when the latter has 3× higher peak compute and 3.5× higher memory bandwidth. The advantage disappears under CUDA graph replay (Step 8.7) or at larger batch (Step 8.5), where the GPU saturates and peak specs again predict outcome.
+
+This frames the cross-platform comparison correctly: the L2-residency principle (§7.1) applies to the **compute-bound regime** (large depthwise kernels), and the launch-overhead regime is a separate effect that explains the inverted baseline numbers.
+
+### 8.9 Output files for §8
+
+```
+results/
+├── ada_env_pt29.txt                         ⬜ (Step 8.3 — pre-upgrade snapshot)
+├── ada_env_pt211.txt                        ⬜ (Step 8.3 — post-upgrade snapshot)
+├── ada_baselines_pt211.log                  ⬜ (Step 8.4)
+├── ada_replknet_pt211.log                   ⬜ (Step 8.4 — NCHW best-of cross-check)
+├── ada_baselines_b{1,4,16,32,64}.log        ⬜ (Step 8.5)
+├── ada_baseline_batch_scaling.png           ⬜ (Step 8.5 plot)
+├── ada_resnet152_nsys.nsys-rep              ⬜ (Step 8.6)
+├── ada_resnet152_nsys_stats.txt             ⬜ (Step 8.6 summary)
+└── ada_resnet152_cudagraph.log              ⬜ (Step 8.7 — decisive)
+```
+
+### 8.10 Pitfalls specific to §8
+
+1. **PT 2.11 may invalidate compile cache** — first call to `torch.compile` will recompile (~minutes per model). Run a quick warm-up pass before benchmarking.
+2. **CUDA graph capture requires fixed shape and no Python-level control flow.** `torch.compile`'d models sometimes have shape guards that break capture. If `torch.cuda.graph` errors, capture the *uncompiled* model — the comparison is still valid.
+3. **Nsight Systems on cu128:** if `--gpu-metrics-device` errors, drop that flag; the trace alone (`--trace=cuda`) is enough for `cudaapisum`/`gpukernsum`.
+4. **Power-state at B=1:** Ada may not boost to top clock when the GPU is mostly idle between launches. Lock clocks before timing if precision matters: `sudo nvidia-smi -lgc <max_freq>` then unlock with `sudo nvidia-smi -rgc`.
+
+---
+
+## 9. Known Pitfalls
 
 1. **Stale ninja lock**: `rm -rf ~/.cache/torch_extensions/py310_cu128/depthwise_*`
 2. **torch.compile reduce-overhead on RepLKNet**: First compile 10-20 min. Cached in `/tmp/torchinductor_chenchon/`.
