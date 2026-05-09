@@ -1,0 +1,207 @@
+======================================================================
+E2E Layout Comparison — cuDNN NCHW vs NHWC (no custom kernels)
+======================================================================
+Device:   NVIDIA RTX 6000 Ada Generation
+PyTorch:  2.9.1+cu128
+Runs:     500 (warmup=200)
+
+
+──────────────────────────────────────────────────────────────────────
+  ConvMixer-768/32 (7×7)
+──────────────────────────────────────────────────────────────────────
+
+  [cuDNN NHWC eager] Loading...Loaded pretrained model: 768_32
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: True
+Total parameters: 21.11M
+ benchmarking...  2.47 ms
+
+  [cuDNN NHWC +compile] Loading...Loaded pretrained model: 768_32
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: True
+Total parameters: 21.11M
+ benchmarking...  1.18 ms
+
+  [cuDNN NCHW eager] Loading...Loaded pretrained model: 768_32
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: False
+Total parameters: 21.11M
+ benchmarking...  2.36 ms
+
+  [cuDNN NCHW +compile] Loading...Loaded pretrained model: 768_32
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: False
+Total parameters: 21.11M
+ benchmarking...  1.32 ms
+
+──────────────────────────────────────────────────────────────────────
+  ConvMixer-1536/20 (9×9)
+──────────────────────────────────────────────────────────────────────
+
+  [cuDNN NHWC eager] Loading...Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+ benchmarking...  8.99 ms
+
+  [cuDNN NHWC +compile] Loading...Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+ benchmarking...  8.55 ms
+
+  [cuDNN NCHW eager] Loading...Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: False
+Total parameters: 51.63M
+ benchmarking...  3.68 ms
+
+  [cuDNN NCHW +compile] Loading...Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: False
+Total parameters: 51.63M
+ benchmarking.../home/chenchon/miniconda3/envs/cuda/lib/python3.10/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+  3.42 ms
+
+──────────────────────────────────────────────────────────────────────
+  RepLKNet-31B (27-31×31)
+──────────────────────────────────────────────────────────────────────
+
+  [cuDNN NHWC eager] Loading...drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+ benchmarking...  8.10 ms
+
+  [cuDNN NHWC +compile] Loading...drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+ benchmarking...  6.41 ms
+
+  [cuDNN NCHW eager] Loading...drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+ benchmarking...  5.28 ms
+
+  [cuDNN NCHW +compile] Loading...drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+ benchmarking...  1.68 ms
+
+
+======================================================================
+SUMMARY — E2E Layout Comparison (cuDNN only, model.half(), B=1)
+======================================================================
+Model                        Config                      Latency
+----------------------------------------------------------------------
+ConvMixer-768/32 (7×7)       cuDNN NHWC eager             2.47 ms
+ConvMixer-768/32 (7×7)       cuDNN NHWC +compile          1.18 ms
+ConvMixer-768/32 (7×7)       cuDNN NCHW eager             2.36 ms
+ConvMixer-768/32 (7×7)       cuDNN NCHW +compile          1.32 ms
+ConvMixer-1536/20 (9×9)      cuDNN NHWC eager             8.99 ms
+ConvMixer-1536/20 (9×9)      cuDNN NHWC +compile          8.55 ms
+ConvMixer-1536/20 (9×9)      cuDNN NCHW eager             3.68 ms
+ConvMixer-1536/20 (9×9)      cuDNN NCHW +compile          3.42 ms
+RepLKNet-31B (27-31×31)      cuDNN NHWC eager             8.10 ms
+RepLKNet-31B (27-31×31)      cuDNN NHWC +compile          6.41 ms
+RepLKNet-31B (27-31×31)      cuDNN NCHW eager             5.28 ms
+RepLKNet-31B (27-31×31)      cuDNN NCHW +compile          1.68 ms
+
+  ConvMixer-768/32 (7×7):
+    Eager:   NHWC 2.47 vs NCHW 2.36 ms → NCHW wins (1.05×)
+    Compile: NHWC 1.18 vs NCHW 1.32 ms → NHWC wins (1.12×)
+
+  ConvMixer-1536/20 (9×9):
+    Eager:   NHWC 8.99 vs NCHW 3.68 ms → NCHW wins (2.45×)
+    Compile: NHWC 8.55 vs NCHW 3.42 ms → NCHW wins (2.50×)
+
+  RepLKNet-31B (27-31×31):
+    Eager:   NHWC 8.10 vs NCHW 5.28 ms → NCHW wins (1.53×)
+    Compile: NHWC 6.41 vs NCHW 1.68 ms → NCHW wins (3.83×)
+
+======================================================================
+DONE
