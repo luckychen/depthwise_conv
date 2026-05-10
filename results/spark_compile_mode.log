@@ -1,11 +1,14 @@
-/home/ava/chenchon/miniforge3/envs/chConv/lib/python3.12/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
-  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
-W0509 17:23:26.751000 820921 site-packages/torch/_inductor/utils.py:1731] [0/0] Not enough SMs to use max_autotune_gemm mode
+Loading 5000 real ImageNet validation images (batch select)...
+Using the latest cached version of the dataset since ILSVRC/imagenet-1k couldn't be found on the Hugging Face Hub
+Found the latest cached dataset configuration 'default' at data/imagenet/ILSVRC___imagenet-1k/default/0.0.0/49e2ee26f3810fb5a7536bbf732a7b07389a47b5 (last modified on Mon Apr 27 11:59:08 2026).
+  5000 images on GPU, 1.51 GB
+
+Timing: 200 warmup + 5000 measurement runs, cycling through 5000 real GPU images
 Model                              default (ms)    reduce-OH (ms)   RO speedup
 ------------------------------------------------------------------------------
-MobileNetV3-Large                         0.949             0.558        1.70x
-EfficientNet-B0                           1.298             0.960        1.35x
-ResNet-152                                2.190             1.563        1.40x
+MobileNetV3-Large                         0.955             0.563        1.69x
+EfficientNet-B0                           1.268             0.935        1.36x
+ResNet-152                                2.115             1.548        1.37x
 Loaded pretrained model: 1536_20
 Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
 Channels last mode: True
@@ -14,7 +17,7 @@ Loaded pretrained model: 1536_20
 Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
 Channels last mode: True
 Total parameters: 51.63M
-ConvMixer-1536/20 CuDNN                  24.026            24.114        1.00x
+ConvMixer-1536/20 CuDNN                  24.432            24.365        1.00x
 Loaded pretrained model: 1536_20
 Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
 Channels last mode: True
@@ -24,7 +27,7 @@ Loaded pretrained model: 1536_20
 Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
 Channels last mode: True
 Total parameters: 51.63M
-ConvMixer-1536/20 Custom                  4.549             4.402        1.03x
+ConvMixer-1536/20 Custom                  4.611             4.399        1.05x
 Loaded pretrained model: 768_32
 Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
 Channels last mode: True
@@ -33,7 +36,7 @@ Loaded pretrained model: 768_32
 Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
 Channels last mode: True
 Total parameters: 21.11M
-ConvMixer-768/32 CuDNN                   13.035            12.801        1.02x
+ConvMixer-768/32 CuDNN                   13.110            12.955        1.01x
 Loaded pretrained model: 768_32
 Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
 Channels last mode: True
@@ -42,7 +45,9 @@ Loaded pretrained model: 768_32
 Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
 Channels last mode: True
 Total parameters: 21.11M
-ConvMixer-768/32 Custom                   2.025             1.880        1.08x
+ConvMixer-768/32 Custom                   2.079             1.933        1.08x
+/home/ava/chenchon/miniforge3/envs/chConv/lib/python3.12/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
 drop path: Identity()
 drop path: DropPath(drop_prob=0.013)
 drop path: DropPath(drop_prob=0.026)
@@ -91,7 +96,7 @@ drop path: DropPath(drop_prob=0.261)
 drop path: DropPath(drop_prob=0.274)
 drop path: DropPath(drop_prob=0.287)
 drop path: DropPath(drop_prob=0.300)
-RepLKNet-31B CuDNN                       14.379            13.683        1.05x
+RepLKNet-31B CuDNN                       14.405            13.866        1.04x
 drop path: Identity()
 drop path: DropPath(drop_prob=0.013)
 drop path: DropPath(drop_prob=0.026)
@@ -116,6 +121,7 @@ drop path: DropPath(drop_prob=0.261)
 drop path: DropPath(drop_prob=0.274)
 drop path: DropPath(drop_prob=0.287)
 drop path: DropPath(drop_prob=0.300)
+W0509 18:39:01.252000 837702 site-packages/torch/_inductor/utils.py:1731] [0/0] Not enough SMs to use max_autotune_gemm mode
 drop path: Identity()
 drop path: DropPath(drop_prob=0.013)
 drop path: DropPath(drop_prob=0.026)
@@ -140,6 +146,6 @@ drop path: DropPath(drop_prob=0.261)
 drop path: DropPath(drop_prob=0.274)
 drop path: DropPath(drop_prob=0.287)
 drop path: DropPath(drop_prob=0.300)
-RepLKNet-31B Custom                       4.389             3.816        1.15x
+RepLKNet-31B Custom                       4.430             3.901        1.14x
 
 Wrote results/spark_compile_mode.json
