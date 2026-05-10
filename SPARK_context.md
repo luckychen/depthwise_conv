@@ -753,6 +753,48 @@ Its high L2 hit rate is incidental (small footprint), not architectural — and 
 launch overhead. This is the textbook case for keeping Custom as a separate baseline from
 both cuDNN and Triton.
 
+### 4.12 Compile-Mode Comparison — `reduce-overhead` vs `default` (DONE 2026-05-09)
+
+Addresses Ada §8 finding that 58–79% of baseline B=1 latency is host-side launch overhead.
+Stack confirmed: PT 2.11.0+cu128, cuDNN 91900 (matches Ada §8).
+Script: `spark_compile_mode.py`. Results: `results/spark_compile_mode.json`.
+
+| Model | default (ms) | reduce-OH (ms) | RO speedup |
+|-------|-------------|---------------|-----------|
+| MobileNetV3-Large | 0.949 | 0.558 | **1.70×** |
+| EfficientNet-B0 | 1.298 | 0.960 | **1.35×** |
+| ResNet-152 | 2.190 | 1.563 | **1.40×** |
+| ConvMixer-1536/20 CuDNN | 24.026 | 24.114 | 1.00× |
+| ConvMixer-1536/20 Custom | 4.549 | 4.402 | **1.03×** |
+| ConvMixer-768/32 CuDNN | 13.035 | 12.801 | 1.02× |
+| ConvMixer-768/32 Custom | 2.025 | 1.880 | **1.08×** |
+| RepLKNet-31B CuDNN | 14.379 | 13.683 | **1.05×** |
+| RepLKNet-31B Custom | 4.389 | 3.816 | **1.15×** |
+
+**Key findings:**
+
+1. **Baselines gain 1.35–1.70× on Spark vs 2.37–4.78× on Ada.** GB10's NVLink-C2C has
+   inherently lower per-launch host→device latency than PCIe Gen4 — less overhead to remove.
+
+2. **Custom depthwise is flat (1.03–1.15×).** ConvMixer and RepLKNet Custom are already
+   BW-saturated in default mode. No launch-overhead headroom to recover, confirming shared-memory
+   tiling puts these kernels in the compute/BW regime at B=1.
+
+3. **cuDNN ConvMixer is also flat (1.00–1.02×).** The inductor-induced GEMM decomposition
+   (§4.9.9.2) is already a multi-kernel launch pattern that CUDA graphs cannot compact further.
+
+4. **Under RO, Ada beats Spark on baselines by 1.6–2.1×.** The §4.11.3 "Spark faster on
+   baselines" result (Spark 0.87–0.75× of Ada in default mode) was a launch-overhead artifact.
+   Under RO — which removes host-side overhead from both — Ada's higher compute throughput
+   wins: Spark RO (0.56/0.96/1.56 ms) vs Ada RO (0.27/0.38/1.12 ms). The cross-platform
+   baseline table should use RO numbers for an apples-to-apples comparison.
+
+**Paper implication:** The §4.11.3 cross-platform baseline table needs a "reduce-overhead"
+column. Under RO the platform story becomes: Ada wins on compute-light baselines (higher
+FLOP/s, lower launch overhead), Spark wins on large-kernel depthwise Custom (BW-saturated
+at B=1, no RO gain needed). This is a cleaner narrative than the default-mode result where
+Spark accidentally appeared faster on baselines.
+
 ## 5. Output Files
 
 ```
@@ -764,8 +806,11 @@ results/
 ├── spark_cudnn_layouts.csv          # cuDNN best-layout results (DONE)
 ├── spark_triton_results.csv         # Triton baseline (DONE)
 ├── spark_kernel_comparison.csv      # All-methods kernel comparison (DONE)
-├── spark_ncu_metrics.csv            # NCU profiling data (TODO)
-└── spark_roofline_data.csv          # Arithmetic intensity + achieved perf (TODO)
+├── spark_ncu_metrics.csv            # NCU profiling data (DONE)
+├── spark_roofline_data.csv          # Arithmetic intensity + achieved perf (DONE)
+├── spark_env_pt211.txt              # Stack confirmation for S8 (DONE)
+├── spark_compile_mode.log           # S8 printed table (DONE)
+└── spark_compile_mode.json          # S8 machine-readable results (DONE)
 ```
 
 Data: `data/imagenet/` — HuggingFace cache (validation split only, ~6 GB Arrow files).
@@ -801,6 +846,7 @@ Scripts at repo root:
 | Baseline models (MobileNetV3, EffNet, ResNet) | DONE | #3 (cross-platform completeness) |
 | Tile sensitivity sweep (Section 4.11.4) | DONE | regime-aware thesis support |
 | L2 hit rate extraction (Section 4.11.5) | DONE | central evidence table |
+| compile(mode='reduce-overhead') sweep — all models (Section 4.12) | DONE 2026-05-09 | launch-overhead quantification; corrects §4.11.3 baseline cross-platform framing |
 
 ### NOT on this branch
 

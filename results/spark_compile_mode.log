@@ -1,0 +1,145 @@
+/home/ava/chenchon/miniforge3/envs/chConv/lib/python3.12/site-packages/timm/models/layers/__init__.py:49: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+W0509 17:23:26.751000 820921 site-packages/torch/_inductor/utils.py:1731] [0/0] Not enough SMs to use max_autotune_gemm mode
+Model                              default (ms)    reduce-OH (ms)   RO speedup
+------------------------------------------------------------------------------
+MobileNetV3-Large                         0.949             0.558        1.70x
+EfficientNet-B0                           1.298             0.960        1.35x
+ResNet-152                                2.190             1.563        1.40x
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+ConvMixer-1536/20 CuDNN                  24.026            24.114        1.00x
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+✓ Custom depthwise kernels loaded successfully (torch.library)
+Loaded pretrained model: 1536_20
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: True
+Total parameters: 51.63M
+ConvMixer-1536/20 Custom                  4.549             4.402        1.03x
+Loaded pretrained model: 768_32
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: True
+Total parameters: 21.11M
+Loaded pretrained model: 768_32
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: True
+Total parameters: 21.11M
+ConvMixer-768/32 CuDNN                   13.035            12.801        1.02x
+Loaded pretrained model: 768_32
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: True
+Total parameters: 21.11M
+Loaded pretrained model: 768_32
+Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: True
+Total parameters: 21.11M
+ConvMixer-768/32 Custom                   2.025             1.880        1.08x
+drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+RepLKNet-31B CuDNN                       14.379            13.683        1.05x
+drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+RepLKNet-31B Custom                       4.389             3.816        1.15x
+
+Wrote results/spark_compile_mode.json

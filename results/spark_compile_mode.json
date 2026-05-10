@@ -1,0 +1,47 @@
+{
+  "MobileNetV3-Large": {
+    "default_ms": 0.9491958559956402,
+    "reduce_overhead_ms": 0.5577304719481617,
+    "ro_speedup": 1.7018898979646628
+  },
+  "EfficientNet-B0": {
+    "default_ms": 1.2982327919453382,
+    "reduce_overhead_ms": 0.9596402279566973,
+    "ro_speedup": 1.3528328160122935
+  },
+  "ResNet-152": {
+    "default_ms": 2.1896557139698416,
+    "reduce_overhead_ms": 1.5625009660143405,
+    "ro_speedup": 1.4013787905394135
+  },
+  "ConvMixer-1536/20 CuDNN": {
+    "default_ms": 24.025622310116887,
+    "reduce_overhead_ms": 24.113514818018302,
+    "ro_speedup": 0.9963550519878694
+  },
+  "ConvMixer-1536/20 Custom": {
+    "default_ms": 4.549360093893483,
+    "reduce_overhead_ms": 4.402006075950339,
+    "ro_speedup": 1.0334742877226337
+  },
+  "ConvMixer-768/32 CuDNN": {
+    "default_ms": 13.035213054157794,
+    "reduce_overhead_ms": 12.801383381942287,
+    "ro_speedup": 1.0182659690159228
+  },
+  "ConvMixer-768/32 Custom": {
+    "default_ms": 2.0252558840438724,
+    "reduce_overhead_ms": 1.8801589799113572,
+    "ro_speedup": 1.0771726783122118
+  },
+  "RepLKNet-31B CuDNN": {
+    "default_ms": 14.379491326166317,
+    "reduce_overhead_ms": 13.682911104056984,
+    "ro_speedup": 1.050908773492126
+  },
+  "RepLKNet-31B Custom": {
+    "default_ms": 4.38909330801107,
+    "reduce_overhead_ms": 3.8164666700176895,
+    "ro_speedup": 1.1500410425412484
+  }
+}

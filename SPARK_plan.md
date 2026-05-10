@@ -1,7 +1,7 @@
 # DGX Spark — Experiment Plan
 
 **Date**: 2026-05-08, updated 2026-05-09
-**Status**: S1–S7 complete. **S8 (compile-mode comparison) pending — see §3 below.**
+**Status**: S1–S8 complete. All experiments done.
 **Branch**: SPARK
 **Context**: `SPARK_context.md` — read for full background.
 **Pair**: `RTX6000_Ada_plan.md` on main branch
@@ -48,6 +48,7 @@ confirms BW saturation at B=1 without needing batch sweeps.
 | S5 | Tile sensitivity (31×31/128ch) | ✅ M=4 wins (0.969 ms) |
 | S6 | L2 hit rates from NCU data | ✅ Custom 51-94% vs cuDNN-NCHW 23-60% |
 | S7 | Cross-platform comparison table | ✅ `results/spark_cross_platform_table.md` |
+| S8 | compile(mode='reduce-overhead') sweep, all models | ✅ `results/spark_compile_mode.json` |
 
 ---
 
@@ -208,7 +209,42 @@ Run:
 python spark_compile_mode.py 2>&1 | tee results/spark_compile_mode.log
 ```
 
-Expected runtime: ~10–15 min total (each compile-RO warmup is the slow part, ~30 s × 7 cases).
+Expected runtime: ~15–20 min total (including RepLKNet which adds two cases).
+
+#### 3.4.1 Actual Results (2026-05-09)
+
+Script extended to include RepLKNet-31B CuDNN and Custom. Stack: PT 2.11.0+cu128, cuDNN 91900.
+
+| Model | default (ms) | reduce-OH (ms) | RO speedup | Ada RO speedup |
+|-------|-------------|---------------|-----------|---------------|
+| MobileNetV3-Large | 0.949 | 0.558 | **1.70×** | 4.78× |
+| EfficientNet-B0 | 1.298 | 0.960 | **1.35×** | 4.45× |
+| ResNet-152 | 2.190 | 1.563 | **1.40×** | 2.37× |
+| ConvMixer-1536/20 CuDNN | 24.026 | 24.114 | 1.00× | — |
+| ConvMixer-1536/20 Custom | 4.549 | 4.402 | **1.03×** | — |
+| ConvMixer-768/32 CuDNN | 13.035 | 12.801 | 1.02× | — |
+| ConvMixer-768/32 Custom | 2.025 | 1.880 | **1.08×** | — |
+| RepLKNet-31B CuDNN | 14.379 | 13.683 | **1.05×** | — |
+| RepLKNet-31B Custom | 4.389 | 3.816 | **1.15×** | — |
+
+**Findings (§3.6 decision rules applied — "predictions hold" branch):**
+
+- **Baselines: 1.35–1.70× RO speedup on Spark vs 2.37–4.78× on Ada.** GB10's NVLink-C2C
+  has lower per-launch host→device latency than Ada's PCIe Gen4. Spark baselines have less
+  launch-overhead headroom than Ada, confirming the platform-specific launch-cost difference.
+
+- **ConvMixer/RepLKNet Custom: 1.03–1.15× (essentially flat).** These kernels are already
+  BW-saturated in default mode — no launch-overhead headroom to remove. Validates the paper's
+  claim that shared-memory tiling puts Custom in the compute/BW regime at B=1.
+
+- **cuDNN ConvMixer: 1.00–1.02× (zero gain).** cuDNN inductor GEMM decomposition (§4.9.9.2)
+  is already a multi-kernel launch storm in default mode — RO cannot CUDA-graph it further.
+
+- **Under RO, Ada beats Spark on all baselines.** Spark default (0.95/1.30/2.19 ms) appeared
+  faster than Ada default (1.29/1.70/2.57 ms). Under RO: Spark (0.56/0.96/1.56 ms) vs Ada
+  (0.27/0.38/1.12 ms) — Ada wins by 1.6–2.1×. The §4.11.3 "Spark beats Ada on baselines"
+  finding was an artifact of unremoved launch overhead on Ada, not a genuine Spark compute
+  advantage. Paper should report the RO numbers as the "apples-to-apples" baseline comparison.
 
 ### 3.5 Pitfalls
 
@@ -249,9 +285,9 @@ After Step S8 produces `results/spark_compile_mode.json`:
 
 ```
 results/
-├── spark_env_pt211.txt                       ⬜ (Step 3.3)
-├── spark_compile_mode.log           ⬜ (Step 3.4 — printed table)
-└── spark_compile_mode.json          ⬜ (Step 3.4 — machine-readable)
+├── spark_env_pt211.txt                       ✅ (Step 3.3)
+├── spark_compile_mode.log                    ✅ (Step 3.4 — printed table)
+└── spark_compile_mode.json                   ✅ (Step 3.4 — machine-readable)
 ```
 
 ---
@@ -274,5 +310,8 @@ results/
 ├── spark_kernel_comparison.csv                ✅
 ├── spark_ncu_metrics.csv                      ✅
 ├── spark_roofline_plot.png                    ✅
-└── ncu/                                       ✅
+├── ncu/                                       ✅
+├── spark_env_pt211.txt                        ✅ (S8: stack confirmation)
+├── spark_compile_mode.log                     ✅ (S8: printed table)
+└── spark_compile_mode.json                    ✅ (S8: machine-readable)
 ```
