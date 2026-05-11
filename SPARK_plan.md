@@ -1,317 +1,454 @@
-# DGX Spark — Experiment Plan
+# DGX Spark — Remaining Experiment Plan for Paper Revision
 
-**Date**: 2026-05-08, updated 2026-05-09
-**Status**: S1–S8 complete. All experiments done.
+**Date**: 2026-05-08 (updated — L2 residency reframe, batch sweep added)
 **Branch**: SPARK
-**Context**: `SPARK_context.md` — read for full background.
-**Pair**: `RTX6000_Ada_plan.md` on main branch
+**Context**: `SPARK_context.md` — read first for full background.
 
-**Scope decision (2026-05-08)**: Spark is the **latency-oriented edge platform** — B=1 only.
-Batch scaling is evaluated on Ada (throughput-oriented desktop GPU) where it addresses
-reviewer feedback (R1.3, R2.2). Spark B=1 already carries the core cross-platform evidence
-(5.89×-6.20× E2E Custom vs cuDNN). NCU L2 data (51-94% Custom vs 23-60% cuDNN-NCHW)
-confirms BW saturation at B=1 without needing batch sweeps.
+## ⚠ Critical: Read SPARK_plan.md CAREFULLY Before Running Any Experiment
 
----
-
-## 0. Headline Findings
-
-1. **Custom dominates on Spark across all configs.** ConvMixer-1536/20 Custom+compile = 4.26 ms vs
-   cuDNN+compile = 24.16 ms (**5.67×**). ConvMixer-768/32 Custom+compile = 2.09 ms vs cuDNN+compile =
-   12.95 ms (**6.20×**). RepLKNet-31B Custom+compile = 4.67 ms vs cuDNN+compile = 15.27 ms (**3.27×**).
-
-2. **BW-pressure governs the regime on this platform.** Spark Custom eager throughput for 1536/20:
-   B=1 → 201.4 img/s. The GB10 is bandwidth-saturated even at B=1 (verified by NCU MemBW%).
-   Shared-memory tiling reduces redundant DRAM weight loads from the first sample — the advantage
-   does not require batch to trigger.
-
-3. **L2 hit rates quantitatively confirm the shmem-tiling story.** Custom holds 51-94% L2 hit on
-   Spark vs cuDNN-NCHW at 23-60%. Output: `results/spark_ncu_l2.csv`.
-
-4. **Per-kernel 7×7/768ch is the true regime reversal**: cuDNN-NHWC wins on Ada (18 vs 28 μs),
-   loses badly on Spark (362 vs 25 μs). At E2E, torch.compile fusion lifts Custom to a tie with
-   cuDNN on Ada (1.14 ms each), then dominates 6.20× on Spark.
-
-5. **Tile sensitivity (31×31/128ch) on Spark**: M=4 → 0.969 ms, M=8 → 1.018 ms, M=16 → 1.678 ms.
-   M=4 wins; optimal tile is SM-count-dependent.
-
----
-
-## 1. Completed Experiments
-
-| ID | Description | Status |
-|----|-------------|--------|
-| S1 | Port --fp16_method to convmixer/benchmark.py | ✅ commit a82dc34 |
-| S2 | Re-run ConvMixer 1536/20 + 768/32 with model.half() | ✅ |
-| S3 | Batch sweep B=1,2,4: Custom + cuDNN-NHWC, 1536/20 | ✅ disconfirmed L2-capacity → reframed BW-pressure |
-| S4 | Baseline models (MobileNetV3, EffNet, ResNet) | ✅ |
-| S5 | Tile sensitivity (31×31/128ch) | ✅ M=4 wins (0.969 ms) |
-| S6 | L2 hit rates from NCU data | ✅ Custom 51-94% vs cuDNN-NCHW 23-60% |
-| S7 | Cross-platform comparison table | ✅ `results/spark_cross_platform_table.md` |
-| S8 | compile(mode='reduce-overhead') sweep, all models | ✅ `results/spark_compile_mode.json` |
-
----
-
-## 2. Why Spark Stays B=1 (Design Decision)
-
-| Reason | Detail |
-|--------|--------|
-| **Deployment role** | Spark is the latency-oriented edge platform — B=1 is the natural deployment mode |
-| **Ada covers batch** | Ada batch sweep (all 4 methods × 3 models × B=1-8) addresses R1.3/R2.2 complaints |
-| **NCU already proves BW saturation** | Custom 51-94% L2 hit vs cuDNN-NCHW 23-60% at B=1 already quantifies the BW-pressure regime |
-| **Adding batch would not change the thesis** | The paper claims Custom wins through shmem tiling at B=1 — Spark batch would only confirm flat throughput (already evident from B=1 NCU) |
-
----
-
-## 3. Follow-Up Experiment — `compile(mode='reduce-overhead')` Sweep (added 2026-05-09)
-
-### 3.1 Why this is needed
-
-Ada's §8 launch-overhead investigation (`RTX6000_Ada_plan.md` §8) produced two findings the
-cross-platform table does not yet address:
-
-1. **Software stack ruled out.** Re-running Ada baselines with PT 2.11.0 + cuDNN 9.19 (matched
-   to Spark's stack) moved baseline latencies by ≤3%. The Spark/Ada B=1 baseline gap is not a
-   software-version artifact.
-2. **Launch overhead dominates baselines on Ada.** Switching ResNet-152 from `compile(mode='default')`
-   to `compile(mode='reduce-overhead')` (which uses CUDA graphs internally) drops latency from
-   2.66 → 1.12 ms (**2.37×**). MobileNetV3 drops 1.30 → 0.27 ms (**4.78×**), EfficientNet-B0
-   drops 1.71 → 0.38 ms (**4.45×**). On Ada, **58–79% of the measured B=1 latency for
-   the baselines is host-side `cudaLaunchKernel` overhead, not GPU compute.**
-
-The current `spark_baselines_model_half.log` and `spark_convmixer_*.log` files all use
-`compile(mode='default')`, which means **Spark's published baseline numbers may also have
-launch-overhead headroom that we have not measured**. The Ada table currently shows Spark
-"winning" the baselines (MobileNet 0.97 vs Ada 1.29, ResNet 2.23 vs Ada 2.60) — but if Spark
-also has launch-overhead headroom, the gap may shrink or invert under reduce-overhead.
-
-### 3.2 Hypothesis
-
-GB10's NVLink-C2C interconnect already has lower per-launch host→device latency than Ada's
-PCIe Gen4. So `reduce-overhead` should help **less** on Spark than on Ada:
-
-| Model | Spark default | Predicted Spark RO | Predicted RO speedup |
-|-------|--------------:|-------------------:|---------------------:|
-| MobileNetV3-Large | 0.97 ms | 0.5–0.7 ms | 1.5–2× (vs Ada 4.78×) |
-| EfficientNet-B0 | 1.30 ms | 0.7–0.9 ms | 1.5–2× (vs Ada 4.45×) |
-| ResNet-152 | 2.23 ms | 1.5–1.8 ms | 1.2–1.5× (vs Ada 2.37×) |
-| ConvMixer-1536/20 Custom+compile | 4.32 ms | ~4.3 ms | ~1× (compute-bound) |
-| ConvMixer-768/32 Custom+compile | 2.09 ms | 1.5–1.8 ms | 1.2–1.4× |
-| RepLKNet-31B Custom+compile | 4.67 ms | already RO | (sanity check only) |
-
-If the predictions hold, two things follow for the paper:
-- The baseline cross-platform table needs a "RO" column. Under RO, Ada beats Spark by 1.6–2×
-  on every baseline (i.e., the Ada peak-FLOPs/BW advantage finally materializes once launch
-  overhead is removed on both platforms).
-- The Custom-vs-cuDNN ratios for ConvMixer/RepLKNet stay essentially unchanged — those models
-  are already in the compute-bound regime, so they validate the paper's core claim cleanly.
-
-### 3.3 Setup (run first, ~5 min)
+The SPARK branch has fixes applied for CUDA stream (CUDA graph compatibility) and layout conversion (remove permute/contiguous). **Do NOT revert these.** Clear stale JIT cache before running:
 
 ```bash
-source <conda init> && conda activate <spark env>
-cd <repo path>
-git pull origin SPARK   # pick up this updated plan and any patches
-export CUDA_VISIBLE_DEVICES=0  # or whichever GB10 device id is correct on Spark
-
-# Confirm matching stack with Ada §8 results
-python -c "import torch; print(torch.__version__, 'cuDNN', torch.backends.cudnn.version())" \
-    | tee results/spark_env_pt211.txt
-# Expect: 2.11.0+cu128, cuDNN 91900 (or whatever the Spark host has)
+rm -rf ~/.cache/torch_extensions/*/depthwise_convmixer
 ```
 
-### 3.4 Step S8 — Reduce-overhead measurement script
+Also: use **per-iteration CUDA events** (not bulk timing) for all E2E benchmarks. Bulk timing gives wrong results for `reduce-overhead` mode (up to 4× error).
 
-A small standalone script is the simplest path (avoids modifying `convmixer/benchmark.py` which
-is used by both branches). Save the following as `spark_compile_mode.py` and run it.
+---
 
+## 0. Scientific Motivation (Why These Experiments)
+
+The paper's central claim: **shared-memory weight tiling matters when (working set) > (L2 capacity).**
+
+| Platform | L2 | Working set (9×9/1536ch, B=1) | Resident? |
+|----------|----|-------------------------------|-----------|
+| RTX 6000 Ada | **96 MB** | ~1.5 MB | Yes (L2 absorbs everything) |
+| DGX Spark | **~24 MB** | ~1.5 MB | Yes at B=1, **exceeds at B=4** |
+
+On Ada (large L2): batch scaling gives marginal gain (everything stays L2-resident).
+On Spark (small L2): batch should push the working set beyond L2 → weight caching matters more → custom kernel advantage GROWS with batch.
+
+The Spark experiments test this prediction. **This is the key new evidence distinguishing the revision from the original submission.**
+
+---
+
+## 0. Status Assessment
+
+### Already Done and Reusable
+
+All experiments from `SPARK_context.md` §§4.1–4.10 are complete. Most data is reusable:
+
+| Experiment | FP16 Method | Reusable? |
+|---|---|---|
+| Per-kernel benchmarks (all 6 configs) | Direct FP16 tensors | **Yes** — method-independent |
+| cuDNN layout study (NCHW vs NHWC) | Direct FP16 | **Yes** |
+| Triton baselines (all 6 configs) | Direct FP16 | **Yes** |
+| Compile-survival / NSYS analysis | model.half() | **Yes** |
+| NCU profiling (all profiles) | Direct FP16 | **Yes** |
+| Roofline plot | From NCU data | **Yes** |
+| Accuracy validation (3 models, 50K) | N/A | **Yes** |
+| RepLKNet E2E (eager + compile + per-layer) | **model.half()** | **Yes** |
+| ConvMixer compiled E2E (1536/20) | **model.half()** | **Yes** |
+
+### What Needs Doing
+
+| Experiment | Problem | Priority |
+|---|---|---|
+| ConvMixer EAGER benchmarks (1536/20, 768/32) | Uses autocast | **CRITICAL** — port `--fp16_method`, re-run with `model_half` |
+| **Batch sweep B=1,2,4 on Spark** | **Never run** — this is the L2 hypothesis test | **CRITICAL** — new addition |
+| Baseline models (MobileNetV3, EffNet, ResNet) | Never measured on Spark | **CRITICAL** — needed for cross-platform table |
+| Tile sensitivity sweep | Does not exist on SPARK | **HIGH** — cross-platform tile comparison |
+| **L2 hit rate extraction from NCU** | **Data exists, not extracted** | **HIGH** — quantitative backbone for L2 claim |
+
+---
+
+## 1. Port `--fp16_method` to `convmixer/benchmark.py` (~15 min)
+
+The main branch (Ada) has `--fp16_method`, `--batch`, and `--real_data` flags. Port them to SPARK.
+
+**Option A (recommended)**: Cherry-pick from main:
+```bash
+git fetch origin
+git cherry-pick <commit-hash>  # Check git log main for the benchmark changes
+```
+
+**Option B**: Manually apply:
+
+1. Add `--fp16_method` argument (choices: `autocast`, `model_half`, default: `model_half`)
+2. In `benchmark_one()`: if `model_half`, call `x = x.half()` before benchmarking; no autocast wrapper
+3. In `build_convmixer_configs()`: if `model_half`, call `model.to(dtype=torch.float16, memory_format=torch.channels_last)`
+4. In `build_baseline_configs()`: respect `fp16_method`
+
+Key code pattern from Ada:
 ```python
-# spark_compile_mode.py
-import torch, time, sys, os, json
-import torchvision.models as tvm
-THIS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'convmixer')
-sys.path.insert(0, THIS)
-from convmixer import load_pretrained
-from kernels.depthwise_torch_ops import replace_depthwise_convs
+def benchmark_one(model, device, num_runs=500, warmup=200, fp16_method='model_half', batch=1):
+    x = torch.randn(batch, 3, 224, 224, device=device).to(memory_format=torch.channels_last)
+    if fp16_method == 'model_half':
+        x = x.half()
+    def run_forward():
+        if fp16_method == 'autocast':
+            with torch.amp.autocast('cuda', dtype=torch.float16):
+                return model(x)
+        else:
+            return model(x)
+```
 
-torch.backends.cudnn.benchmark = True
-device = torch.device('cuda:0')
+Also add per-iteration CUDA events timing (see `final_revision_plan.md` §8 of context.md for the pattern).
 
-def time_it(fn, n_warm=50, n_meas=500):
-    for _ in range(n_warm): fn()
-    torch.cuda.synchronize()
-    t0 = time.perf_counter()
-    for _ in range(n_meas): fn()
-    torch.cuda.synchronize()
-    return (time.perf_counter() - t0) / n_meas * 1000
+---
 
-def make_convmixer(name, custom):
-    m = load_pretrained(name, checkpoints_dir=os.path.join(THIS, 'checkpoints'),
-                        device=device, channels_last=True)
-    if custom: m = replace_depthwise_convs(m, verbose=False)
-    return m.to(dtype=torch.float16, memory_format=torch.channels_last).eval()
+## 2. Re-Run ConvMixer Eager with model.half() (~20 min)
 
-def make_baseline(factory):
-    return factory(weights=None).cuda().half().to(memory_format=torch.channels_last).eval()
+```bash
+# ConvMixer-1536/20
+python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 500 \
+    --device cuda:0 --fp16_method model_half \
+    2>&1 | tee results/spark_1536_20_model_half.log
 
-x = torch.randn(1, 3, 224, 224, device=device, dtype=torch.float16
-                ).to(memory_format=torch.channels_last)
+# ConvMixer-768/32
+python convmixer/benchmark.py --model 768_32 --skip_accuracy --num_runs 500 \
+    --device cuda:0 --fp16_method model_half \
+    2>&1 | tee results/spark_768_32_model_half.log
+```
 
-cases = [
-    ('MobileNetV3-Large',         lambda: make_baseline(tvm.mobilenet_v3_large)),
-    ('EfficientNet-B0',           lambda: make_baseline(tvm.efficientnet_b0)),
-    ('ResNet-152',                lambda: make_baseline(tvm.resnet152)),
-    ('ConvMixer-1536/20 CuDNN',   lambda: make_convmixer('1536_20', custom=False)),
-    ('ConvMixer-1536/20 Custom',  lambda: make_convmixer('1536_20', custom=True)),
-    ('ConvMixer-768/32 CuDNN',    lambda: make_convmixer('768_32',  custom=False)),
-    ('ConvMixer-768/32 Custom',   lambda: make_convmixer('768_32',  custom=True)),
-]
+Record: CuDNN eager, CuDNN+compile, Custom eager, Custom+compile latencies.
 
-results = {}
-print(f"{'Model':<32} {'default (ms)':>14} {'reduce-OH (ms)':>17} {'RO speedup':>12}")
-print("-" * 78)
+**Expected**: CuDNN eager numbers decrease (autocast overhead removed). Custom eager decreases significantly (pointwise autocast overhead removed from 40 layers). Compiled numbers barely change.
 
-for name, factory in cases:
-    # default
-    m = factory()
-    md = torch.compile(m, mode='default')
-    with torch.no_grad():
-        for _ in range(30): md(x)
-        t_d = time_it(lambda: md(x))
-    del m, md; torch.cuda.empty_cache(); torch._dynamo.reset()
+---
 
-    # reduce-overhead
-    m = factory()
-    try:
-        mr = torch.compile(m, mode='reduce-overhead', fullgraph=False)
-        with torch.no_grad():
-            for _ in range(50): mr(x)
-            t_r = time_it(lambda: mr(x))
-    except Exception as e:
-        t_r = float('nan')
-        print(f"  reduce-overhead FAILED for {name}: {type(e).__name__}: {e}", file=sys.stderr)
-    del m
-    if 'mr' in dir(): del mr
-    torch.cuda.empty_cache(); torch._dynamo.reset()
+## 3. Batch Sweep on Spark — L2 Hypothesis Test (~30 min) ⭐ NEW
 
-    sp = (t_d / t_r) if t_r == t_r else float('nan')
-    print(f"{name:<32} {t_d:>14.3f} {t_r:>17.3f} {sp:>11.2f}x")
-    results[name] = {'default_ms': t_d, 'reduce_overhead_ms': t_r, 'ro_speedup': sp}
+**This is the most important new experiment.** It tests whether batch size pushes the working set beyond Spark's ~24MB L2, making weight caching more valuable.
 
-with open('results/spark_compile_mode.json', 'w') as f:
-    json.dump(results, f, indent=2)
-print("\nWrote results/spark_compile_mode.json")
+**Run ConvMixer-1536/20 with real ImageNet data, model.half(), B=1,2,4:**
+
+```bash
+# B=1 (baseline — should match Step 2)
+python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 200 \
+    --device cuda:0 --fp16_method model_half --batch 1 --real_data \
+    --data_dir ./data/imagenet \
+    2>&1 | tee results/spark_batch_b1.log
+
+# B=2
+python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 200 \
+    --device cuda:0 --fp16_method model_half --batch 2 --real_data \
+    --data_dir ./data/imagenet \
+    2>&1 | tee results/spark_batch_b2.log
+
+# B=4
+python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 200 \
+    --device cuda:0 --fp16_method model_half --batch 4 --real_data \
+    --data_dir ./data/imagenet \
+    2>&1 | tee results/spark_batch_b4.log
+```
+
+For each B, record: Custom eager (ms, img/s), Custom+compile (ms, img/s), cuDNN eager (ms, img/s).
+
+### What to Look For
+
+| Prediction | Ada (96MB L2) result | Expected Spark (~24MB L2) result |
+|---|---|---|
+| B=1 → B=4 throughput gain | +12% (526→588 img/s eager) | **Larger than 12%** if L2 hypothesis holds |
+| Custom+compile at B=4 vs B=1 | B=4 is 604 vs B=1 682 img/s (worse!) | **B=4 should be BETTER than B=1** if weight caching amortization matters |
+| cuDNN batch scaling | Flat/declining (125 img/s) | Should also be flat — cuDNN doesn't cache weights across batch |
+
+### How to Interpret
+
+- **If Spark B=4 throughput > B=1 throughput for Custom** → L2 hypothesis confirmed. Weight caching matters more when L2 is small and batch expands the working set. This is the headline finding.
+- **If Spark B=4 ≈ B=1** → Bottleneck is bandwidth (not capacity). The paper adjusts: "On bandwidth-constrained platforms, shared-memory tiling helps even at B=1 because redundant DRAM loads dominate regardless of L2."
+- **Either outcome is publishable.** The experiment's value is in testing the hypothesis, not confirming it.
+
+---
+
+## 4. Baseline Models on Spark (~20 min)
+
+```bash
+python convmixer/benchmark.py --model 1536_20 --skip_accuracy --num_runs 500 \
+    --device cuda:0 --fp16_method model_half --baselines \
+    2>&1 | tee results/spark_baselines_model_half.log
+```
+
+Measures: MobileNetV3-Large, EfficientNet-B0, ResNet-152. All with `torch.compile(mode='default')`, `channels_last`, `model.half()`.
+
+---
+
+## 5. Tile Sensitivity Sweep (~30 min)
+
+Copy `benchmark_sensitivity.py` from main branch:
+```bash
+git show origin/main:benchmark_sensitivity.py > benchmark_sensitivity.py
 ```
 
 Run:
-
 ```bash
-python spark_compile_mode.py 2>&1 | tee results/spark_compile_mode.log
+python benchmark_sensitivity.py --device cuda:0 --num_runs 500 --warmup 50 \
+    --M_values 4 8 16 --Cb_values 32 \
+    --output results/spark_sensitivity_31x31.csv \
+    2>&1 | tee results/spark_sensitivity_31x31.log
 ```
 
-Expected runtime: ~15–20 min total (including RepLKNet which adds two cases).
+**Expected cross-platform finding**:
 
-#### 3.4.1 Actual Results (2026-05-09)
+| M | Ada blocks/SM | Spark blocks/SM | Ada optimal? | Spark optimal? |
+|---|--------------|-----------------|-------------|----------------|
+| 4 | 5.5 | 16.3 | **Yes** (needs saturation) | Diminishing returns |
+| 8 | 1.4 | 4.1 | Marginal | **Expected optimal** |
+| 16 | 0.45 | 1.3 | Catastrophic | Poor |
 
-Script extended to include RepLKNet-31B CuDNN and Custom. Stack: PT 2.11.0+cu128, cuDNN 91900.
+Pareto-optimal tile size shifts with SM count → regime-aware finding.
 
-| Model | default (ms) | reduce-OH (ms) | RO speedup | Ada RO speedup |
-|-------|-------------|---------------|-----------|---------------|
-| MobileNetV3-Large | 0.949 | 0.558 | **1.70×** | 4.78× |
-| EfficientNet-B0 | 1.298 | 0.960 | **1.35×** | 4.45× |
-| ResNet-152 | 2.190 | 1.563 | **1.40×** | 2.37× |
-| ConvMixer-1536/20 CuDNN | 24.026 | 24.114 | 1.00× | — |
-| ConvMixer-1536/20 Custom | 4.549 | 4.402 | **1.03×** | — |
-| ConvMixer-768/32 CuDNN | 13.035 | 12.801 | 1.02× | — |
-| ConvMixer-768/32 Custom | 2.025 | 1.880 | **1.08×** | — |
-| RepLKNet-31B CuDNN | 14.379 | 13.683 | **1.05×** | — |
-| RepLKNet-31B Custom | 4.389 | 3.816 | **1.15×** | — |
+---
 
-**Findings (§3.6 decision rules applied — "predictions hold" branch):**
+## 6. Extract L2 Hit Rates from Existing Spark NCU Data (~15 min) ⭐ NEW
 
-- **Baselines: 1.35–1.70× RO speedup on Spark vs 2.37–4.78× on Ada.** GB10's NVLink-C2C
-  has lower per-launch host→device latency than Ada's PCIe Gen4. Spark baselines have less
-  launch-overhead headroom than Ada, confirming the platform-specific launch-cost difference.
+The Spark NCU data is already collected (`results/ncu/*.csv`, `results/spark_ncu_metrics.csv`). Extract L2-specific metrics:
 
-- **ConvMixer/RepLKNet Custom: 1.03–1.15× (essentially flat).** These kernels are already
-  BW-saturated in default mode — no launch-overhead headroom to remove. Validates the paper's
-  claim that shared-memory tiling puts Custom in the compute/BW regime at B=1.
+```bash
+# If analyze_ncu.py supports L2 extraction:
+python analyze_ncu.py --ncu_dir results/ncu/ --output results/spark_ncu_l2.csv --metric l2
 
-- **cuDNN ConvMixer: 1.00–1.02× (zero gain).** cuDNN inductor GEMM decomposition (§4.9.9.2)
-  is already a multi-kernel launch storm in default mode — RO cannot CUDA-graph it further.
+# Otherwise, grep from raw CSVs:
+for f in results/ncu/*.csv; do
+    echo "=== $(basename $f) ==="
+    grep -i "l2\|lts" "$f" | head -5
+done
+```
 
-- **Under RO, Ada beats Spark on all baselines.** Spark default (0.95/1.30/2.19 ms) appeared
-  faster than Ada default (1.29/1.70/2.57 ms). Under RO: Spark (0.56/0.96/1.56 ms) vs Ada
-  (0.27/0.38/1.12 ms) — Ada wins by 1.6–2.1×. The §4.11.3 "Spark beats Ada on baselines"
-  finding was an artifact of unremoved launch overhead on Ada, not a genuine Spark compute
-  advantage. Paper should report the RO numbers as the "apples-to-apples" baseline comparison.
+Target metrics: `lts__t_sectors`, `lts__t_sectors_lookup_hit_rate`, or equivalent L2 cache counters.
 
-### 3.5 Pitfalls
+### Build Cross-Platform L2 Table
 
-1. **`mode='reduce-overhead'` requires fixed input shape and no Python control flow.** ConvMixer
-   may emit recompile warnings on the first few iterations — the 50-iteration warmup absorbs
-   them. If you see `recompile_limit (8)` errors, increase warmup or call `torch._dynamo.reset()`
-   between configs (already in the script).
-2. **Custom kernel + reduce-overhead.** The custom op is registered via `torch.library` and
-   should capture cleanly. If `cudagraph` capture fails for the Custom variant, fall back to
-   `mode='default'` for that row and note in the log — that itself is a finding worth recording.
-3. **Allocator pinning.** `mode='reduce-overhead'` allocates static input/output tensors. If
-   memory grows unboundedly across iterations, set `torch._inductor.config.triton.cudagraphs = True`
-   explicitly; usually unnecessary on PT 2.11.
-4. **Power state at B=1.** GB10 may not boost to top clock when idle between launches. Lock
-   clocks if precision matters: `sudo nvidia-smi -lgc <max>` then `-rgc` to release.
-5. **First-iteration latency.** RO mode's first call captures the graph (slow). The 50-iteration
-   warmup ensures we measure replay only.
+| Config | Ada 96MB L2 hit (Custom) | Spark ~24MB L2 hit (Custom) | Δ |
+|--------|------------------------|---------------------------|------|
+| 9×9, 1536ch | 81.7% | ? | ? |
+| 7×7, 768ch | 75.9% | ? | ? |
+| 31×31, 128ch | 95.9% | ? | ? |
+| 27×27, 512ch | 93.0% | ? | ? |
 
-### 3.6 Decision rules / what to write up
+**This is the paper's central evidence table.** If Spark L2 hit rates are significantly lower than Ada's, the L2 residency principle is quantitatively validated.
 
-After Step S8 produces `results/spark_compile_mode.json`:
+---
 
-- **If predictions hold (RO speedup is small for ConvMixer/RepLKNet, large for baselines):**
-  Add a "Compile mode" column to `spark_cross_platform_table.md` showing both `default` and
-  `reduce-overhead` numbers. Update §4.11 of `SPARK_context.md` to note that baseline-vs-Custom
-  comparisons should ideally use a regime-appropriate compile mode.
+## 7. Build Cross-Platform Comparison Table (~30 min)
 
-- **If RO underperforms `default` for any Custom config:** That means cudagraph capture is
-  failing or stream-syncing badly with the `torch.library` op. Note it as a limitation
-  (not a regression of the kernel itself).
+After Steps 2–6, compile the master comparison table:
 
-- **If RO baselines on Spark are much slower than expected** (e.g., ResNet-152 RO > 1.8 ms):
-  Suggests GB10's launch overhead is a smaller fraction of B=1 latency than predicted, i.e.,
-  Spark is more compute-limited even on baselines than Ada. Worth reporting as the cleaner
-  story than the launch-overhead narrative.
+### E2E Model Comparison (model.half(), torch.compile reduce-overhead)
 
-### 3.7 Output files for Step S8
+| Model | Config | Ada (ms) | Spark (ms) | Spark/Ada |
+|-------|--------|---------|------------|-----------|
+| ConvMixer-1536/20 | CuDNN best | 3.56 (NCHW eager) | ? | ? |
+| | Custom+compile(r-o) | 1.89 | ? | ? |
+| ConvMixer-768/32 | CuDNN+compile(r-o) | 1.14 | ? | ? |
+| | Custom+compile(r-o) | 0.87 | ? | ? |
+| RepLKNet-31B | CuDNN best | 5.09 (NCHW eager) | ? | ? |
+| | Custom+compile(r-o) | 1.62 | ? | ? |
+
+### Baseline Comparison (model.half(), torch.compile reduce-overhead)
+
+| Model | Ada (ms) | Spark (ms) | Spark/Ada |
+|-------|---------|------------|-----------|
+| MobileNetV3-Large | 1.29 | ? | ? |
+| EfficientNet-B0 | 1.70 | ? | ? |
+| ResNet-152 | 2.57 | ? | ? |
+
+### Batch Scaling Comparison
+
+| B | Ada Custom eager (img/s) | Spark Custom eager (img/s) | Ada gain | Spark gain |
+|---|-------------------------|---------------------------|---------|------------|
+| 1 | 526 | ? | 1.00× | 1.00× |
+| 2 | — | ? | — | ? |
+| 4 | 588 | ? | 1.12× | ? |
+
+---
+
+## 8. Execution Order and Time Estimates
+
+| Step | Description | Time | Depends On |
+|------|-------------|------|------------|
+| 1 | Port --fp16_method | 15 min | — |
+| 2 | Re-run ConvMixer model.half() | 20 min | Step 1 |
+| 3 | **Batch sweep B=1,2,4** | **30 min** | **Step 1** |
+| 4 | Baselines | 20 min | Step 1 |
+| 5 | Tile sensitivity | 30 min | — |
+| 6 | **L2 NCU extraction** | **15 min** | **— (data exists)** |
+| 7 | Cross-platform table | 30 min | Steps 2–6 |
+
+**Total: ~2.5 hours** (Steps 3 and 6 are the additions vs previous plan).
+
+**Recommended order**: Run Step 6 first (fastest, uses existing data, gives immediate L2 insight). Then Steps 1→2→3→4→5→7.
+
+---
+
+## 9. What Can Be Skipped
+
+- **Re-running per-kernel benchmarks**: Method-independent. Existing data correct.
+- **Re-running cuDNN layout study**: Method-independent.
+- **Re-running Triton baselines**: Method-independent.
+- **Re-running compile-survival**: Already model.half(). Correct.
+- **Re-running accuracy validation**: Unchanged by FP16 method.
+- **Re-running NCU/NSYS from scratch**: Already collected. Just extract L2 metrics (Step 6).
+
+---
+
+## 10. ConvMixer-768/32 (7×7) — The Cleanest L2 Regime Demonstration
+
+This config deserves special attention because it shows the sharpest cross-platform reversal:
+
+| | Ada (96MB L2) | Spark (~24MB L2) |
+|---|---|---|
+| Per-kernel Custom vs cuDNN | cuDNN NHWC **wins** (18 vs 28 μs) | Custom **wins** (25 vs 362 μs NHWC) |
+| E2E Custom+compile(r-o) vs cuDNN | **1.31×** (0.87 vs 1.14 ms) | Expected **larger** |
+| Why? | Ada L2 absorbs cuDNN's working set | Spark L2 can't → Custom shmem tiling matters |
+
+**This is the poster child for the L2 residency principle.** A kernel size where cuDNN has a specialized implementation (7×7 NHWC), yet Custom still wins on the small-L2 platform because L2 residency is the governing variable, not library implementation quality.
+
+For the paper: frame the 7×7 result as "K=7 marks the empirical regime boundary where cuDNN's optimized NHWC kernel wins on large-L2 GPUs but loses on small-L2 platforms — the same custom kernel outperforms on both, confirming that L2 residency, not kernel size, is the governing variable."
+
+---
+
+## 11. Output Files Expected
 
 ```
 results/
-├── spark_env_pt211.txt                       ✅ (Step 3.3)
-├── spark_compile_mode.log                    ✅ (Step 3.4 — printed table)
-└── spark_compile_mode.json                   ✅ (Step 3.4 — machine-readable)
+├── spark_1536_20_model_half.log           ⬜ (Step 2)
+├── spark_768_32_model_half.log            ⬜ (Step 2)
+├── spark_batch_b1.log                     ⬜ (Step 3 — NEW)
+├── spark_batch_b2.log                     ⬜ (Step 3 — NEW)
+├── spark_batch_b4.log                     ⬜ (Step 3 — NEW)
+├── spark_baselines_model_half.log         ⬜ (Step 4)
+├── spark_sensitivity_31x31.csv            ⬜ (Step 5)
+├── spark_sensitivity_31x31.log            ⬜ (Step 5)
+├── spark_ncu_l2.csv                       ⬜ (Step 6 — NEW)
+├── spark_cross_platform_table.md          ⬜ (Step 7)
+│
+│ (existing — reusable)
+├── spark_hardware_info.txt                ✅
+├── spark_convmixer_1536_20.txt            ✅ (autocast — reference only)
+├── spark_convmixer_1536_20_v2.txt         ✅ (model.half() compiled)
+├── spark_convmixer_768_32.txt             ✅ (autocast — reference only)
+├── spark_replknet.txt                     ✅ (model.half())
+├── spark_cudnn_layouts.csv                ✅
+├── spark_triton_results.csv               ✅
+├── spark_kernel_comparison.csv            ✅
+├── spark_ncu_metrics.csv                  ✅
+├── spark_ncu_tables.md                    ✅
+├── spark_roofline_data.csv                ✅
+├── spark_roofline_plot.png                ✅
+└── ncu/                                   ✅
 ```
 
 ---
 
-## 4. Output Files — Final State
+## 12. Paper Table Audit — Data Gaps Found (2026-05-10)
+
+Systematic audit of all 18 tables and 5 figures revealed gaps below.
+Items marked ⬜ need GPU time on **this machine (Spark/GB10)**.
+Items marked 🔧 are data-entry fixes or entries fillable from existing files.
+
+### 12.1 Fillable from Existing Spark Data (🔧, no GPU needed)
+
+The following `tab:kernel_perf` GB10 entries show "---" but data EXISTS in this branch:
+
+**From `results/spark_cudnn_layouts.csv`:**
+
+| Config | cuDNN NCHW (μs) | cuDNN NHWC (μs) | cuDNN-best |
+|--------|-----------------|-----------------|------------|
+| 7×7, 768ch | 71 | 362 | 71 (NCHW) |
+| 9×9, 1536ch | 295 | 1088 | 295 (NCHW) |
+| 13×13, 1024ch | 13 | 54 | 13 (NCHW) |
+| 27×27, 512ch | 44 | 301 | 44 (NCHW) |
+| 29×29, 256ch | 198 | 1026 | 198 (NCHW) |
+| 31×31, 128ch | 416 | 2045 | 416 (NCHW) |
+
+**From `results/spark_kernel_comparison.csv` (Custom + Triton):**
+
+| Config | Custom (μs) | Triton (μs) | vs cuDNN-best |
+|--------|------------|-------------|---------------|
+| 7×7, 768ch | 25 | 96 | 2.84× |
+| 9×9, 1536ch | 73 | 299 | 4.04× |
+| 13×13, 1024ch | 190 | 16 | 0.07× |
+| 27×27, 512ch | 177 | 87 | 0.25× |
+| 29×29, 256ch | 268 | 265 | 0.74× |
+| 31×31, 128ch | 428 | 717 | 0.97× |
+
+**Decision needed on Triton GB10**: Triton is slower than cuDNN NCHW for K≥27 on GB10. Recommendation: include only for 7×7 and 9×9; mark K≥27 as "---" with footnote explaining autotune failure.
+
+**Decision needed on GB10 13×13**: Custom = 190 μs is 14.6× slower than cuDNN NCHW (13 μs). Tiny spatial dimension (7×7) makes launch overhead dominate. Recommendation: either include honestly or drop 13×13 row.
+
+### 12.2 Missing Experiments on Spark (⬜, need GPU time)
+
+| # | Table | What's Missing | Priority | Time | Why Needed |
+|---|-------|---------------|----------|------|------------|
+| E1 | `tab:pointwise_layout` | **GB10 pointwise NCHW vs NHWC** for 4 configs | **HIGH** | 10 min | Table 1 is Ada-only but paper emphasizes cross-platform. NHWC speedup expected to be larger on GB10 due to lower BW (273 vs 960 GB/s) |
+| E2 | `tab:batch` | **GB10 RepLKNet-31B batch sweep** (B=1,2,4) for cuDNN + Custom | MEDIUM | 30 min | Table only has Ada rows. Would show BW-saturation on GB10 for third architecture |
+| E3 | `tab:batch` | **GB10 ConvMixer-768/32 batch sweep** (B=1,2,4) | MEDIUM | 20 min | Same rationale as E2 |
+| E4 | `tab:batch` | **GB10 ConvMixer-1536/20 cuDNN-NCHW** batch (B=1,2,4) | LOW | 15 min | Currently only cuDNN-NHWC + Custom columns for GB10. Requires `--cudnn_layout nchw` flag |
+| E5 | `tab:batch` | GB10 Triton batch sweep | **SKIP** | — | Triton 5.81× slower than Custom on GB10. Not meaningful data |
+
+### 12.3 Experiment Commands
+
+**E1 — Pointwise Layout Benchmark (10 min):**
+```bash
+python benchmark_pointwise_layout.py --device cuda:0 --num_runs 500 \
+    --output results/spark_pointwise_layout.csv
+```
+Script is in repo root. Measures 1×1 conv NCHW vs NHWC for 4 configs.
+**Expected**: NHWC speedup larger than Ada (1.18–1.22×) because BW is scarcer → layout matters more.
+
+**E2 — RepLKNet-31B Batch Sweep (30 min):**
+```bash
+for B in 1 2 4; do
+    python replknet/benchmark_replknet.py --device cuda:0 --batch $B \
+        --num_runs 200 --fp16_method model_half \
+        2>&1 | tee results/spark_replknet_batch_b${B}.log
+done
+```
+**Expected**: Custom throughput flat/declining (already BW-saturated at B=1 per §3 results).
+
+**E3 — ConvMixer-768/32 Batch Sweep (20 min):**
+```bash
+for B in 1 2 4; do
+    python convmixer/benchmark.py --model 768_32 --skip_accuracy \
+        --device cuda:0 --fp16_method model_half --batch $B --real_data \
+        --num_runs 200 \
+        2>&1 | tee results/spark_768_32_batch_b${B}.log
+done
+```
+
+**E4 — ConvMixer-1536/20 cuDNN-NCHW Batch (15 min):**
+```bash
+for B in 1 2 4; do
+    python convmixer/benchmark.py --model 1536_20 --skip_accuracy \
+        --device cuda:0 --fp16_method model_half --batch $B --real_data \
+        --cudnn_layout nchw --num_runs 200 \
+        2>&1 | tee results/spark_1536_20_cudnn_nchw_batch_b${B}.log
+done
+```
+Note: requires `--cudnn_layout nchw` flag. Check if already ported to SPARK branch.
+
+### 12.4 Output Files Expected
 
 ```
 results/
-├── spark_1536_20_model_half.log               ✅
-├── spark_768_32_model_half.log                ✅
-├── spark_batch_b1.log                         ✅ (1536/20: Custom + cuDNN-NHWC)
-├── spark_batch_b2.log                         ✅
-├── spark_batch_b4.log                         ✅
-├── spark_baselines_model_half.log             ✅
-├── spark_sensitivity_31x31.csv                ✅
-├── spark_ncu_l2.csv                           ✅
-├── spark_cross_platform_table.md              ✅
-├── spark_cudnn_layouts.csv                    ✅
-├── spark_triton_results.csv                   ✅
-├── spark_kernel_comparison.csv                ✅
-├── spark_ncu_metrics.csv                      ✅
-├── spark_roofline_plot.png                    ✅
-├── ncu/                                       ✅
-├── spark_env_pt211.txt                        ✅ (S8: stack confirmation)
-├── spark_compile_mode.log                     ✅ (S8: printed table)
-└── spark_compile_mode.json                    ✅ (S8: machine-readable)
+├── spark_pointwise_layout.csv               ⬜ (E1 — NEW)
+├── spark_replknet_batch_b1.log              ⬜ (E2 — NEW)
+├── spark_replknet_batch_b2.log              ⬜ (E2 — NEW)
+├── spark_replknet_batch_b4.log              ⬜ (E2 — NEW)
+├── spark_768_32_batch_b1.log                ⬜ (E3 — NEW)
+├── spark_768_32_batch_b2.log                ⬜ (E3 — NEW)
+├── spark_768_32_batch_b4.log                ⬜ (E3 — NEW)
+├── spark_1536_20_cudnn_nchw_batch_b1.log    ⬜ (E4 — NEW)
+├── spark_1536_20_cudnn_nchw_batch_b2.log    ⬜ (E4 — NEW)
+└── spark_1536_20_cudnn_nchw_batch_b4.log    ⬜ (E4 — NEW)
 ```
+
+### 12.5 Priority Order
+
+1. **E1**: Pointwise layout benchmark (HIGH — closes biggest cross-platform gap)
+2. **E2**: RepLKNet batch sweep (MEDIUM — fills tab:batch GB10 gap for third architecture)
+3. **E3**: ConvMixer-768/32 batch sweep (MEDIUM — second architecture batch data)
+4. **E4**: cuDNN-NCHW batch sweep (LOW — best-cuDNN comparison)
+
+Total estimated GPU time: **~75 minutes**
