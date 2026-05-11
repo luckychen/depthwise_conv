@@ -1,0 +1,66 @@
+========================================================================
+Batch Sweep: All Methods — ConvMixer-768_32
+========================================================================
+Device:  NVIDIA GB10
+PyTorch: 2.11.0+cu128  Triton: 3.6.0
+Runs: 100 (trimmed ±5%)
+
+
+[cuDNN NHWC + compile]
+  Loading model...
+  Warming up compile (B=1)...
+  Batch=1 ...
+    latency=13.317 ms   throughput=75.1 img/s
+  Batch=4 ...
+    latency=49.771 ms   throughput=80.4 img/s
+  Batch=8 ...
+    latency=100.122 ms   throughput=79.9 img/s
+
+[cuDNN NCHW + compile]
+  Loading model...
+  Warming up compile (B=1)...
+  Batch=1 ...
+    latency=13.334 ms   throughput=75.0 img/s
+  Batch=4 ...
+    latency=15.601 ms   throughput=256.4 img/s
+  Batch=8 ...
+    latency=33.255 ms   throughput=240.6 img/s
+
+[Triton + compile]
+  Loading model...
+  Warming up compile (B=1)...
+  Batch=1 ...
+    latency=4.642 ms   throughput=215.4 img/s
+  Batch=4 ...
+    latency=16.612 ms   throughput=240.8 img/s
+
+[Custom + compile]
+  Loading model...
+  Warming up compile (B=1)...
+  Batch=1 ...
+    latency=2.214 ms   throughput=451.6 img/s
+  Batch=4 ...
+    latency=13.059 ms   throughput=306.3 img/s
+  Batch=8 ...
+    latency=29.738 ms   throughput=269.0 img/s
+
+Results saved to results/spark_768_32_batch_sweep.csv.csv
+
+========================================================================
+SUMMARY
+========================================================================
+Method                          B      Latency     Throughput
+------------------------------------------------------------
+cuDNN NHWC + compile            1      13.317 ms         75.1 img/s
+cuDNN NHWC + compile            4      49.771 ms         80.4 img/s
+cuDNN NHWC + compile            8     100.122 ms         79.9 img/s
+cuDNN NCHW + compile            1      13.334 ms         75.0 img/s
+cuDNN NCHW + compile            4      15.601 ms        256.4 img/s
+cuDNN NCHW + compile            8      33.255 ms        240.6 img/s
+Triton + compile                1       4.642 ms        215.4 img/s
+Triton + compile                4      16.612 ms        240.8 img/s
+Custom + compile                1       2.214 ms        451.6 img/s
+Custom + compile                4      13.059 ms        306.3 img/s
+Custom + compile                8      29.738 ms        269.0 img/s
+
+Done.
