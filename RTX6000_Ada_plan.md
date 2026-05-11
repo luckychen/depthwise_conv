@@ -459,3 +459,118 @@ results/
 4. **v2 kernel**: Documented dead-end behind `DEPTHWISE_9X9_VARIANT=v2` env toggle. Do not promote.
 5. **cuDNN-NCHW batch testing**: Need to ensure the model runs in pure NCHW (no channels_last conversion). The `--cudnn_layout nchw` flag may need to be added to `convmixer/benchmark.py`.
 6. **Triton batch testing**: The Triton integration for E2E models (not just per-kernel) may need a script. Check `benchmark_triton.py` for the E2E integration pattern.
+
+---
+
+## 10. Paper Table Audit — Data Gaps Found (2026-05-10)
+
+Systematic audit of all 18 tables and 5 figures revealed the following gaps.
+Items marked ⬜ need GPU time. Items marked 🔧 are data-entry fixes (no GPU needed).
+
+### 10.1 Data Errors to Fix (🔧, no GPU needed)
+
+| # | Table | Issue | Fix |
+|---|-------|-------|-----|
+| D1 | `tab:ncu` line 752 | Ada Custom 29×29 L2 hit = "---" | Fill from `ada_ncu_tables.md`: **92.1%** |
+| D2 | `tab:kernel_perf` Ada 13×13 Triton | Shows "---" but `ada_triton_results.csv` has 22 μs | Fill: **22** |
+| D3 | `tab:kernel_perf` GB10 29×29 Custom | Shows **358** μs but correct value is **268** μs (confirmed by spark_kernel_comparison.csv: 0.268 ms, and per-stage RepLKNet: 0.538 ms ÷ 2 = 269 μs) | Change 358 → **268** |
+| D4 | `tab:tilesweep` GB10 M=16 blocks/SM | Shows **0.25** but 64 blocks ÷ 48 SMs = **1.33** | Change 0.25 → **1.3** |
+| D5 | Text line 794 | Says "6.6×" GB10 compile degradation but `tab:compilesurvival` shows 438→2660 μs = 6.07× (table says 6.1×) | Change text to **6.1×** |
+
+### 10.2 Missing GB10 Data — Fillable from Existing Spark Files (🔧)
+
+The following `tab:kernel_perf` GB10 entries show "---" but data EXISTS in Spark branch files.
+
+**From `spark_cudnn_layouts.csv` (cuDNN NCHW + NHWC):**
+
+| Config | cuDNN NCHW (μs) | cuDNN NHWC (μs) | cuDNN-best |
+|--------|-----------------|-----------------|------------|
+| 7×7, 768ch | 71 | 362 | 71 (NCHW) |
+| 9×9, 1536ch | 295 | 1088 | 295 (NCHW) |
+| 13×13, 1024ch | 13 | 54 | 13 (NCHW) |
+| 27×27, 512ch | 44 | 301 | 44 (NCHW) |
+| 29×29, 256ch | 198 | 1026 | 198 (NCHW) |
+| 31×31, 128ch | 416 | 2045 | 416 (NCHW) |
+
+**From `spark_kernel_comparison.csv` (Custom + Triton):**
+
+| Config | Custom (μs) | Triton (μs) | vs cuDNN-best |
+|--------|------------|-------------|---------------|
+| 7×7, 768ch | 25 | 96 | 2.84× |
+| 9×9, 1536ch | 73 | 299 | 4.04× |
+| 13×13, 1024ch | 190 | 16 | 0.07× |
+| 27×27, 512ch | 177 | 87 | 0.25× |
+| 29×29, 256ch | 268 | 265 | 0.74× |
+| 31×31, 128ch | 428 | 717 | 0.97× |
+
+**Note on Triton GB10**: Triton is very slow for large kernels on GB10 (717 μs for 31×31, slower than even cuDNN NHWC at 2045 μs). Including these numbers would weaken the paper's narrative. **Recommendation**: include GB10 Triton only for 7×7 and 9×9 where it's competitive; mark larger kernels as "---" with footnote "Triton autotune fails for K≥27 on GB10 (L2 too small for autotuner working set)".
+
+**Note on GB10 13×13**: Custom = 190 μs is **14.6× slower** than cuDNN NCHW (13 μs). This is because 1024ch/7×7 has tiny spatial dimension — kernel launch overhead dominates. This is an unfavorable result for Custom. **Recommendation**: either (a) include honestly and explain, or (b) drop 13×13 row entirely since RepLKNet's 13×13 stage contributes <5% of total latency.
+
+### 10.3 Missing Experiments — Need GPU Time (⬜)
+
+| # | Table | What's Missing | Priority | Time | Why Needed |
+|---|-------|---------------|----------|------|------------|
+| E1 | `tab:pointwise_layout` | **GB10 pointwise NCHW vs NHWC** for 4 configs | HIGH | 10 min | Table 1 is Ada-only; paper claims cross-platform. Script already written: `benchmark_pointwise_layout.py` |
+| E2 | `tab:batch` | GB10 RepLKNet-31B batch sweep (B=1,2,4) | MEDIUM | 30 min | Table only has Ada rows. If BW-saturation holds on GB10, this reinforces the cross-platform regime claim |
+| E3 | `tab:batch` | GB10 ConvMixer-768/32 batch sweep (B=1,2,4) | MEDIUM | 20 min | Same as E2 for second architecture |
+| E4 | `tab:batch` | GB10 ConvMixer-1536/20 cuDNN-NCHW batch (B=1,2,4) | LOW | 15 min | Currently only cuDNN-NHWC + Custom columns for GB10. cuDNN-NCHW shows best-cuDNN comparison |
+| E5 | `tab:batch` | GB10 Triton batch sweep for ConvMixer-1536/20 | SKIP | — | Triton is 5.81× slower than Custom on GB10 (9.18 vs 4.14 ms compiled). Not meaningful. |
+
+### 10.4 Experiment Scripts for Missing Data
+
+**E1 — GB10 Pointwise Layout Benchmark (on Spark machine):**
+```bash
+python benchmark_pointwise_layout.py --device cuda:0 --num_runs 500 \
+    --output results/spark_pointwise_layout.csv
+```
+This measures 1×1 conv in NCHW vs NHWC for: ConvMixer-1536 (32²×1536), RepLKNet stg2→3 (14², 512→1024), RepLKNet stg3 (7²×1024), ConvMixer-768 (32²×768).
+
+Expected result: On GB10 with lower bandwidth (273 vs 960 GB/s), NHWC pointwise speedup should be **larger** than Ada (1.18–1.22×) because NHWC avoids the NCHW→NHWC transpose overhead for GEMM, which is more costly when BW is scarce.
+
+**E1 — Ada Pointwise Layout Benchmark (re-confirm on this machine):**
+```bash
+python benchmark_pointwise_layout.py --device cuda:0 --num_runs 500 \
+    --output results/ada_pointwise_layout.csv
+```
+Run this first to confirm Ada numbers match current Table 1 values (0.0425, 0.0359, etc.).
+
+**E2 — GB10 RepLKNet-31B Batch Sweep (on Spark machine):**
+```bash
+for B in 1 2 4; do
+    python replknet/benchmark_replknet.py --device cuda:0 --batch $B \
+        --num_runs 200 --fp16_method model_half \
+        2>&1 | tee results/spark_replknet_batch_b${B}.log
+done
+```
+Expected: Custom throughput flat/declining (BW-saturated at B=1, per results.md §11.2). cuDNN throughput also flat. This confirms BW-bound regime on GB10.
+
+**E3 — GB10 ConvMixer-768/32 Batch Sweep (on Spark machine):**
+```bash
+for B in 1 2 4; do
+    python convmixer/benchmark.py --model 768_32 --skip_accuracy \
+        --device cuda:0 --fp16_method model_half --batch $B --real_data \
+        --num_runs 200 \
+        2>&1 | tee results/spark_768_32_batch_b${B}.log
+done
+```
+
+**E4 — GB10 ConvMixer-1536/20 cuDNN-NCHW Batch Sweep (on Spark machine):**
+```bash
+for B in 1 2 4; do
+    python convmixer/benchmark.py --model 1536_20 --skip_accuracy \
+        --device cuda:0 --fp16_method model_half --batch $B --real_data \
+        --cudnn_layout nchw --num_runs 200 \
+        2>&1 | tee results/spark_1536_20_cudnn_nchw_batch_b${B}.log
+done
+```
+Note: requires `--cudnn_layout nchw` flag (may need porting to SPARK branch).
+
+### 10.5 Priority Order
+
+1. **🔧 D1–D5**: Fix data errors in paper.tex immediately (no GPU needed)
+2. **🔧 Fill GB10 tab:kernel_perf**: Enter existing Spark data (no GPU needed)
+3. **⬜ E1**: Run pointwise layout benchmark on both machines
+4. **⬜ E2**: GB10 RepLKNet batch sweep
+5. **⬜ E3**: GB10 ConvMixer-768/32 batch sweep
+6. **⬜ E4**: GB10 cuDNN-NCHW batch sweep (lower priority)
