@@ -1,0 +1,23 @@
+Device: NVIDIA GB10
+PyTorch: 2.11.0+cu128, cuDNN: 91900
+
+=== NCHW ===
+E2E: 7.322 ms
+  Activation     count= 82  total=1.027 ms  per-call=0.0125 ms
+  AvgPool        count=  1  total=0.009 ms  per-call=0.0087 ms
+  Conv3x3        count=  1  total=0.070 ms  per-call=0.0696 ms
+  DW             count= 29  total=3.138 ms  per-call=0.1082 ms
+  Linear         count=  1  total=0.019 ms  per-call=0.0195 ms
+  PW(1x1)        count=100  total=4.583 ms  per-call=0.0458 ms
+  Sum profiled: 8.846 ms;  Implicit/other (residual, dropout, etc): -1.524 ms
+
+=== NHWC (Custom DW) ===
+E2E: 6.782 ms
+  Activation     count= 82  total=0.804 ms  per-call=0.0098 ms
+  AvgPool        count=  1  total=0.023 ms  per-call=0.0231 ms
+  Conv3x3        count=  1  total=0.028 ms  per-call=0.0284 ms
+  DW             count=  7  total=0.933 ms  per-call=0.1332 ms
+  Linear         count=  1  total=0.026 ms  per-call=0.0262 ms
+  PW(1x1)        count=100  total=2.868 ms  per-call=0.0287 ms
+  Sum profiled: 4.683 ms;  Implicit/other (residual, dropout, etc): 2.099 ms
+
