@@ -54,13 +54,19 @@ class OpaqueCuDNNDepthwise(nn.Module):
         self.weight = conv.weight
         self.bias = conv.bias
         self.stride = conv.stride
-        self.padding = conv.padding
         self.groups = conv.groups
+        # Convert padding='same' to explicit integer padding
+        if conv.padding == 'same' or (isinstance(conv.padding, str) and conv.padding == 'same'):
+            self.pad = [k // 2 for k in conv.kernel_size]
+        elif isinstance(conv.padding, (tuple, list)):
+            self.pad = list(conv.padding)
+        else:
+            self.pad = [conv.padding, conv.padding]
 
     def forward(self, x):
         return torch.ops.cudnn_opaque.depthwise_conv2d(
             x, self.weight, self.bias,
-            list(self.stride), list(self.padding), self.groups
+            list(self.stride), self.pad, self.groups
         )
 
 
