@@ -306,6 +306,124 @@ __global__ void depthWise_forward_ch_512_kernel_27_tensor_14_fp16_naive64(
 
 
 //=============================================================================
+// ALL-SHARED BRANCH-FREE KERNEL (Cb=32, half2, split-warp colmerge)
+// Fits within 99KB shmem limit on both Ada and GB10.
+//
+// Key insight: K=27 > H=14, so every input pixel contributes to every output.
+// No bounds checking needed — branch-free 14×14 inner loop.
+//
+// Design: each 32-thread warp splits into two 16-thread half-warps.
+// Each half-warp processes one output pixel using half2 (16 lanes × 2ch = 32ch).
+// The two pixels are adjacent columns (colmerge): they share input loads
+// from shmem (broadcast, zero bank conflicts) but read different weight
+// columns (kj for pixel A, kj-1 for pixel B).
+//
+// Grid: (2, 7, 16) = 224 blocks. 256 threads = 8 warps, 7 active.
+// Shmem: weights 27×27×32 half + input 14×14×32 half = 59,200 bytes.
+// Inner loop: branch-free 14×14, pure shmem, half2 FMAs.
+//=============================================================================
+__global__ void __launch_bounds__(256, 1)
+depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32(
+    half* __restrict__ inputTensor,
+    const half* __restrict__ weight,
+    half* __restrict__ outputTensor)
+{
+    extern __shared__ half sharedMem[];
+    half2* wCache2 = reinterpret_cast<half2*>(sharedMem);
+    half2* iCache2 = reinterpret_cast<half2*>(sharedMem + 27 * 27 * 32);
+
+    const int tid = threadIdx.x;
+    const int laneId = tid & 31;
+    const int warpIdx = tid >> 5;
+
+    const int blockI = blockIdx.x * 7;
+    const int blockJ = blockIdx.y * 2;
+    const int blockCh = blockIdx.z * 32;
+
+    // Cooperative load: weights (27*27*16 = 11,664 half2 values, 256 threads)
+    half2* wGlobal2 = reinterpret_cast<half2*>(const_cast<half*>(weight));
+    for (int i = tid; i < 27 * 27 * 16; i += 256) {
+        int kh = i / (27 * 16);
+        int rem = i % (27 * 16);
+        int kw = rem / 16;
+        int c2 = rem % 16;
+        wCache2[i] = wGlobal2[(kh * 27 + kw) * 256 + blockCh / 2 + c2];
+    }
+
+    // Cooperative load: input (14*14*16 = 3,136 half2 values, 256 threads)
+    half2* iGlobal2 = reinterpret_cast<half2*>(inputTensor);
+    for (int i = tid; i < 14 * 14 * 16; i += 256) {
+        int row = i / (14 * 16);
+        int rem = i % (14 * 16);
+        int col = rem / 16;
+        int c2 = rem % 16;
+        iCache2[i] = iGlobal2[(row * 14 + col) * 256 + blockCh / 2 + c2];
+    }
+    __syncthreads();
+
+    if (warpIdx >= 7) return;
+
+    int outI = blockI + warpIdx;
+    int localLane = laneId & 15;
+    // Lanes 0-15: pixel A (outJ0), lanes 16-31: pixel B (outJ0+1)
+    int myOutJ = blockJ + (laneId >> 4);
+
+    half2 acc = __float2half2_rn(0.0f);
+
+    #pragma unroll 2
+    for (int inI = 0; inI < 14; ++inI) {
+        int ki = inI - outI + 13;
+        int kiBase = ki * 27 * 16;
+        int inRowBase = inI * 14 * 16;
+
+        #pragma unroll 2
+        for (int inJ = 0; inJ < 14; ++inJ) {
+            half2 iv = iCache2[inRowBase + inJ * 16 + localLane];
+            int kj = inJ - myOutJ + 13;
+            half2 wv = wCache2[kiBase + kj * 16 + localLane];
+            acc = __hfma2(iv, wv, acc);
+        }
+    }
+
+    half2* out2 = reinterpret_cast<half2*>(outputTensor);
+    int ch2 = blockCh / 2 + localLane;
+    out2[(outI * 14 + myOutJ) * 256 + ch2] = acc;
+}
+
+
+//=============================================================================
+// C Interface: All-shared branch-free Cb=32 half2 split-warp colmerge
+//=============================================================================
+void depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32_C_interface(
+    half* inputTensor,
+    const half* weight,
+    half* outputTensor,
+    int tensorHeight,
+    int tensorWidth,
+    int Ch,
+    int windowSize)
+{
+    if (tensorHeight != 14 || tensorWidth != 14 || Ch != 512 || windowSize != 27) {
+        std::cout << "error: expected 512ch, 14x14, kernel 27. Got "
+                  << Ch << "ch, " << tensorHeight << "x" << tensorWidth
+                  << ", kernel " << windowSize << std::endl;
+        exit(1);
+    }
+
+    dim3 gridSize(2, 7, 16);  // ceil(14/7)=2, ceil(14/2)=7, 512/32=16 → 224 blocks
+    int threadSize = 256;
+    size_t sharedMemSize = (27 * 27 * 32 + 14 * 14 * 32) * sizeof(half);  // 59200 bytes
+
+    cudaFuncSetAttribute(
+        depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, sharedMemSize);
+
+    depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32
+        <<<gridSize, threadSize, sharedMemSize>>>(inputTensor, weight, outputTensor);
+}
+
+
+//=============================================================================
 // C Interface: Naive
 //=============================================================================
 void depthWise_forward_ch_512_kernel_27_tensor_14_fp16_naive_C_interface(

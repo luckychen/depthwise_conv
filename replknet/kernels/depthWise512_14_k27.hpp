@@ -19,4 +19,14 @@ void depthWise_forward_ch_512_kernel_27_tensor_14_fp16_naive64_C_interface(
     half* inputTensor, const half* weight, half* outputTensor,
     int tensorHeight, int tensorWidth, int Ch, int windowSize);
 
+// All-shared branch-free Cb=32, half2 split-warp colmerge (both platforms, 59KB shmem)
+__global__ void depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32(
+    half* __restrict__ inputTensor,
+    const half* __restrict__ weight,
+    half* __restrict__ outputTensor);
+
+void depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32_C_interface(
+    half* inputTensor, const half* weight, half* outputTensor,
+    int tensorHeight, int tensorWidth, int Ch, int windowSize);
+
 #endif
