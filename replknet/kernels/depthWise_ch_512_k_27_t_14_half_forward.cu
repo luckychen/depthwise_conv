@@ -309,20 +309,18 @@ __global__ void depthWise_forward_ch_512_kernel_27_tensor_14_fp16_naive64(
 // ALL-SHARED BRANCH-FREE KERNEL (Cb=32, half2, split-warp colmerge)
 // Fits within 99KB shmem limit on both Ada and GB10.
 //
-// Key insight: K=27 > H=14, so every input pixel contributes to every output.
-// No bounds checking needed — branch-free 14×14 inner loop.
+// K=27 > H=14: every input pixel contributes to every output — branch-free.
 //
-// Design: each 32-thread warp splits into two 16-thread half-warps.
-// Each half-warp processes one output pixel using half2 (16 lanes × 2ch = 32ch).
-// The two pixels are adjacent columns (colmerge): they share input loads
-// from shmem (broadcast, zero bank conflicts) but read different weight
-// columns (kj for pixel A, kj-1 for pixel B).
+// Split-warp: each 32-thread warp → two 16-lane half-warps, each handling
+// one output pixel via half2 (16 × 2ch = 32ch). Adjacent columns share
+// input loads (broadcast) with different weight columns. Zero bank conflicts.
 //
-// Grid: (2, 7, 16) = 224 blocks. 256 threads = 8 warps, 7 active.
-// Shmem: weights 27×27×32 half + input 14×14×32 half = 59,200 bytes.
-// Inner loop: branch-free 14×14, pure shmem, half2 FMAs.
+// Grid: (1, 7, 16) = 112 blocks (same as naive64 — single wave on GB10).
+// 512 threads = 16 warps, 14 active (one per row), 2 idle.
+// Shmem: weights 27×27×32 + input 14×14×32 = 59,200 bytes.
+// Inner loop: branch-free 14×14, pure shmem reads, half2 FMAs.
 //=============================================================================
-__global__ void __launch_bounds__(256, 1)
+__global__ void __launch_bounds__(512, 1)
 depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32(
     half* __restrict__ inputTensor,
     const half* __restrict__ weight,
@@ -334,15 +332,14 @@ depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32(
 
     const int tid = threadIdx.x;
     const int laneId = tid & 31;
-    const int warpIdx = tid >> 5;
+    const int warpIdx = tid >> 5;  // 0-15
 
-    const int blockI = blockIdx.x * 7;
     const int blockJ = blockIdx.y * 2;
     const int blockCh = blockIdx.z * 32;
 
-    // Cooperative load: weights (27*27*16 = 11,664 half2 values, 256 threads)
+    // Cooperative load: weights (11,664 half2, 512 threads → ~23 rounds)
     half2* wGlobal2 = reinterpret_cast<half2*>(const_cast<half*>(weight));
-    for (int i = tid; i < 27 * 27 * 16; i += 256) {
+    for (int i = tid; i < 27 * 27 * 16; i += 512) {
         int kh = i / (27 * 16);
         int rem = i % (27 * 16);
         int kw = rem / 16;
@@ -350,9 +347,9 @@ depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32(
         wCache2[i] = wGlobal2[(kh * 27 + kw) * 256 + blockCh / 2 + c2];
     }
 
-    // Cooperative load: input (14*14*16 = 3,136 half2 values, 256 threads)
+    // Cooperative load: input (3,136 half2, 512 threads → ~7 rounds)
     half2* iGlobal2 = reinterpret_cast<half2*>(inputTensor);
-    for (int i = tid; i < 14 * 14 * 16; i += 256) {
+    for (int i = tid; i < 14 * 14 * 16; i += 512) {
         int row = i / (14 * 16);
         int rem = i % (14 * 16);
         int col = rem / 16;
@@ -361,11 +358,10 @@ depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32(
     }
     __syncthreads();
 
-    if (warpIdx >= 7) return;
+    if (warpIdx >= 14) return;
 
-    int outI = blockI + warpIdx;
+    int outI = warpIdx;  // one row per warp, all 14 rows
     int localLane = laneId & 15;
-    // Lanes 0-15: pixel A (outJ0), lanes 16-31: pixel B (outJ0+1)
     int myOutJ = blockJ + (laneId >> 4);
 
     half2 acc = __float2half2_rn(0.0f);
@@ -410,8 +406,8 @@ void depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_c
         exit(1);
     }
 
-    dim3 gridSize(2, 7, 16);  // ceil(14/7)=2, ceil(14/2)=7, 512/32=16 → 224 blocks
-    int threadSize = 256;
+    dim3 gridSize(1, 7, 16);  // 14 rows/block, ceil(14/2)=7, 512/32=16 → 112 blocks
+    int threadSize = 512;
     size_t sharedMemSize = (27 * 27 * 32 + 14 * 14 * 32) * sizeof(half);  // 59200 bytes
 
     cudaFuncSetAttribute(
