@@ -39,10 +39,10 @@ static constexpr dim3 GRID_256_29 = {4, 3, 8};
 static constexpr int THREADS_256_29 = 512;
 static constexpr size_t SHMEM_256_29 = 29 * 29 * 32 * sizeof(half);
 
-// 27×27, 512ch, 14×14: grid(2,7,8)=112 blocks, 512 threads, shmem=27*27*64*2
-static constexpr dim3 GRID_512_27 = {2, 7, 8};
-static constexpr int THREADS_512_27 = 512;
-static constexpr size_t SHMEM_512_27 = 27 * 27 * 64 * sizeof(half);
+// 27×27, 512ch, 14×14 — allshared branchfree h2 cb32: grid(2,7,16)=224, 256 threads
+static constexpr dim3 GRID_512_27 = {2, 7, 16};
+static constexpr int THREADS_512_27 = 256;
+static constexpr size_t SHMEM_512_27 = (27 * 27 * 32 + 14 * 14 * 32) * sizeof(half);
 
 // ---- Helper: launch bias add on stream ----
 
@@ -161,7 +161,7 @@ torch::Tensor depthwise_27x27_512_nhwc(
     cudaStream_t stream = c10::cuda::getCurrentCUDAStream(input.device().index()).stream();
 
     cudaFuncSetAttribute(
-        depthWise_forward_ch_512_kernel_27_tensor_14_fp16_naive64,
+        depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32,
         cudaFuncAttributeMaxDynamicSharedMemorySize, SHMEM_512_27);
 
     int batch_stride = H * W * C;
@@ -169,7 +169,7 @@ torch::Tensor depthwise_27x27_512_nhwc(
         half* in_ptr  = reinterpret_cast<half*>(input.data_ptr<at::Half>()) + b * batch_stride;
         half* out_ptr = reinterpret_cast<half*>(output.data_ptr<at::Half>()) + b * batch_stride;
 
-        depthWise_forward_ch_512_kernel_27_tensor_14_fp16_naive64
+        depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32
             <<<GRID_512_27, THREADS_512_27, SHMEM_512_27, stream>>>(
                 in_ptr,
                 reinterpret_cast<const half*>(weight.data_ptr<at::Half>()),

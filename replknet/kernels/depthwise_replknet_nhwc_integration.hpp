@@ -28,4 +28,10 @@ __global__ void depthWise_forward_ch_512_kernel_27_tensor_14_fp16_naive64(
     const half* __restrict__ weight,
     half* __restrict__ outputTensor);
 
+// 27×27, 512ch, 14×14 — allshared branchfree Cb=32 half2 split-warp colmerge
+__global__ void depthWise_forward_ch_512_kernel_27_tensor_14_fp16_allshared_branchfree_h2_cb32(
+    half* __restrict__ inputTensor,
+    const half* __restrict__ weight,
+    half* __restrict__ outputTensor);
+
 #endif
