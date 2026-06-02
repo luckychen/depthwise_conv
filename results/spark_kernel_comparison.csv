@@ -1,7 +1,0 @@
-config,channels,kernel_size,spatial,custom_ms,cudnn_nchw_ms,cudnn_nhwc_ms,triton_ms,speedup_vs_cudnn_best,speedup_vs_triton
-ConvMixer 9x9,1536,9,32x32,0.073,0.295,1.088,0.299,4.04,4.10
-ConvMixer 7x7,768,7,32x32,0.025,0.071,0.362,0.096,2.84,3.84
-RepLKNet 31x31,128,31,56x56,0.428,0.416,2.045,0.717,0.97,1.68
-RepLKNet 29x29,256,29,28x28,0.268,0.198,1.026,0.265,0.74,0.99
-RepLKNet 27x27,512,27,14x14,0.177,0.044,0.301,0.087,0.25,0.49
-RepLKNet 13x13,1024,13,7x7,0.190,0.013,0.054,0.016,0.07,0.08

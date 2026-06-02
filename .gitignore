@@ -37,5 +37,5 @@ Thumbs.db
 # Downloaded/dataset dirs — avoid
 convmixer/data/
 
-# results/ — KEEP (performance profiles, benchmark logs, CSVs)
-# All result files are tracked; only large binary results go in results/README.md
+# Results — reviewers generate their own
+results/

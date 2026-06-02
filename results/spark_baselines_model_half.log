@@ -1,89 +1,0 @@
-======================================================================
-ConvMixer-1536_20 Benchmark
-======================================================================
-Device: NVIDIA GB10
-PyTorch: 2.11.0+cu128, CuDNN: 91900
-Batch size: 1, FP16 channels_last, fp16_method=model_half
-
-  Loading 1536_20 CuDNN (eager)...
-Loaded pretrained model: 1536_20
-Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
-Channels last mode: True
-Total parameters: 51.63M
-  Loading 1536_20 CuDNN (compile)...
-Loaded pretrained model: 1536_20
-Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
-Channels last mode: True
-Total parameters: 51.63M
-  Loading 1536_20 Custom (eager)...
-Loaded pretrained model: 1536_20
-Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
-Channels last mode: True
-Total parameters: 51.63M
-✓ Custom depthwise kernels loaded successfully (torch.library)
-  Loading 1536_20 Custom (compile)...
-Loaded pretrained model: 1536_20
-Checkpoint: /home/ava/chenchon/depthwise_conv/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
-Channels last mode: True
-Total parameters: 51.63M
-
-  Loading MobileNetV3-Large...
-Downloading: "https://download.pytorch.org/models/mobilenet_v3_large-5c1a4163.pth" to /home/ava/chenchon/.cache/torch/hub/checkpoints/mobilenet_v3_large-5c1a4163.pth
-  0%|          | 0.00/21.1M [00:00<?, ?B/s] 93%|█████████▎| 19.6M/21.1M [00:00<00:00, 203MB/s]100%|██████████| 21.1M/21.1M [00:00<00:00, 188MB/s]
-  Loading EfficientNet-B0...
-Downloading: "https://download.pytorch.org/models/efficientnet_b0_rwightman-7f5810bc.pth" to /home/ava/chenchon/.cache/torch/hub/checkpoints/efficientnet_b0_rwightman-7f5810bc.pth
-  0%|          | 0.00/20.5M [00:00<?, ?B/s]100%|██████████| 20.5M/20.5M [00:00<00:00, 289MB/s]
-  Loading ResNet-152...
-Downloading: "https://download.pytorch.org/models/resnet152-f82ba261.pth" to /home/ava/chenchon/.cache/torch/hub/checkpoints/resnet152-f82ba261.pth
-  0%|          | 0.00/230M [00:00<?, ?B/s] 12%|█▏        | 27.2M/230M [00:00<00:00, 282MB/s] 26%|██▋       | 60.8M/230M [00:00<00:00, 323MB/s] 40%|████      | 93.2M/230M [00:00<00:00, 331MB/s] 54%|█████▍    | 125M/230M [00:00<00:00, 324MB/s]  68%|██████▊   | 156M/230M [00:00<00:00, 309MB/s] 81%|████████  | 186M/230M [00:00<00:00, 310MB/s] 94%|█████████▍| 218M/230M [00:00<00:00, 318MB/s]100%|██████████| 230M/230M [00:00<00:00, 319MB/s]
-W0508 12:07:20.067000 450323 site-packages/torch/_inductor/utils.py:1731] [1/0] Not enough SMs to use max_autotune_gemm mode
-
-======================================================================
-LATENCY BENCHMARK
-======================================================================
-
-  CuDNN eager:
-    Latency:    25.51 ms
-    Throughput: 39.2 img/s
-
-  CuDNN + compile:
-    Latency:    24.38 ms
-    Throughput: 41.0 img/s
-
-  Custom eager:
-    Latency:    5.43 ms
-    Throughput: 184.1 img/s
-
-  Custom + compile:
-    Latency:    4.32 ms
-    Throughput: 231.5 img/s
-
-  MobileNetV3-Large + compile:
-    Latency:    0.97 ms
-    Throughput: 1028.5 img/s
-
-  EfficientNet-B0 + compile:
-    Latency:    1.30 ms
-    Throughput: 770.1 img/s
-
-  ResNet-152 + compile:
-    Latency:    2.23 ms
-    Throughput: 447.9 img/s
-
-======================================================================
-SUMMARY
-======================================================================
-
-Configuration                          Latency   Throughput   vs CuDNN
-----------------------------------------------------------------------
-CuDNN eager                            25.51 ms      39.2 img/s      1.00x
-CuDNN + compile                        24.38 ms      41.0 img/s      1.05x
-Custom eager                            5.43 ms     184.1 img/s      4.69x
-Custom + compile                        4.32 ms     231.5 img/s      5.91x
-MobileNetV3-Large + compile             0.97 ms    1028.5 img/s     26.23x
-EfficientNet-B0 + compile               1.30 ms     770.1 img/s     19.64x
-ResNet-152 + compile                    2.23 ms     447.9 img/s     11.42x
-
-======================================================================
-DONE
-======================================================================
