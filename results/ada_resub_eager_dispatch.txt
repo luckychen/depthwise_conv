@@ -1,0 +1,27 @@
+/home/chenchon/miniconda3/envs/cuda/lib/python3.10/site-packages/torch/profiler/profiler.py:224: UserWarning: Warning: Profiler clears events at the end of each cycle.Only events from the current cycle will be reported.To keep events across cycles, set acc_events=True.
+  _warn_once(
+torch 2.11.0+cu128  cudnn 91900
+
+===== layout NCHW =====
+C1 K= 7 C= 768 32x32:    25.98 us/iter  kernels: void at::native::(anonymous namespace)::conv_depthwise2d_forward_kerne (25.9us)
+C2 K= 9 C=1536 32x32:    90.78 us/iter  kernels: void at::native::(anonymous namespace)::conv_depthwise2d_forward_kerne (93.7us)
+C3 K=31 C= 128 56x56:   153.30 us/iter  kernels: void at::native::(anonymous namespace)::conv_depthwise2d_forward_kerne (152.0us)
+C4 K=29 C= 256 28x28:    78.30 us/iter  kernels: void at::native::(anonymous namespace)::conv_depthwise2d_forward_kerne (74.6us)
+C5 K=27 C= 512 14x14:    14.06 us/iter  kernels: void at::native::(anonymous namespace)::conv_depthwise2d_forward_kerne (13.6us)
+C6 K=13 C=1024 7x7:     9.50 us/iter  kernels: void at::native::(anonymous namespace)::conv_depthwise2d_forward_kerne (5.2us)
+
+===== layout NHWC =====
+C1 K= 7 C= 768 32x32:    18.45 us/iter  kernels: conv2d_c1_k1_nhwc (18.1us)
+C2 K= 9 C=1536 32x32:   287.98 us/iter  kernels: sm86_xmma_fprop_implicit_gemm_indexed_f16f16_f16f32_f32_nhwckrsc_nhwc_ (196.5us) | void tensorTransformGeneric<__half, __half, float, true, false, false, (81.2us) | Memset (Device) (8.1us)
+C3 K=31 C= 128 56x56:   634.26 us/iter  kernels: sm86_xmma_fprop_implicit_gemm_indexed_f16f16_f16f32_f32_nhwckrsc_nhwc_ (584.9us) | void tensorTransformGeneric<__half, __half, float, true, false, false, (39.9us) | Memset (Device) (4.3us)
+C4 K=29 C= 256 28x28:   262.41 us/iter  kernels: sm86_xmma_fprop_implicit_gemm_indexed_f16f16_f16f32_f32_nhwckrsc_nhwc_ (221.3us) | void tensorTransformGeneric<__half, __half, float, true, false, false, (35.6us) | Memset (Device) (4.7us)
+C5 K=27 C= 512 14x14:    91.94 us/iter  kernels: void cudnn::cnn::conv2d_grouped_direct_kernel<false, true, false, true (91.3us)
+C6 K=13 C=1024 7x7:    23.51 us/iter  kernels: void cudnn::cnn::conv2d_grouped_direct_kernel<false, true, false, true (23.1us)
+
+===== cuDNN on/off invariance (NCHW) =====
+C1: cudnn=on    23.25 us   cudnn=off    23.26 us   ratio 1.000
+C2: cudnn=on    91.62 us   cudnn=off    92.97 us   ratio 0.985
+C3: cudnn=on   155.04 us   cudnn=off   153.48 us   ratio 1.010
+C4: cudnn=on    78.06 us   cudnn=off    75.15 us   ratio 1.039
+C5: cudnn=on    14.07 us   cudnn=off    14.03 us   ratio 1.003
+C6: cudnn=on     8.54 us   cudnn=off     8.48 us   ratio 1.007
