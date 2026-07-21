@@ -1,0 +1,30 @@
+/home/ava/chenchon/miniforge3/envs/chConv/lib/python3.12/site-packages/torch/profiler/profiler.py:224: UserWarning: Warning: Profiler clears events at the end of each cycle.Only events from the current cycle will be reported.To keep events across cycles, set acc_events=True.
+  _warn_once(
+WARNING:2026-07-21 16:01:52 741695:741695 init.cpp:116] function cbapi->getCuptiStatus() failed with error CUPTI_ERROR_INVALID_DEVICE (2)
+WARNING:2026-07-21 16:01:52 741695:741695 init.cpp:117] CUPTI initialization failed - CUDA profiler activities will be missing
+INFO:2026-07-21 16:01:52 741695:741695 init.cpp:119] If you see CUPTI_ERROR_INSUFFICIENT_PRIVILEGES, refer to https://developer.nvidia.com/nvidia-development-tools-solutions-err-nvgpuctrperm-cupti
+torch 2.11.0+cu128  cudnn 91900
+
+===== layout NCHW =====
+C1 K= 7 C= 768 32x32:    70.80 us/iter  kernels: 
+C2 K= 9 C=1536 32x32:   293.16 us/iter  kernels: 
+C3 K=31 C= 128 56x56:   411.60 us/iter  kernels: 
+C4 K=29 C= 256 28x28:   196.80 us/iter  kernels: 
+C5 K=27 C= 512 14x14:    42.83 us/iter  kernels: 
+C6 K=13 C=1024 7x7:    13.20 us/iter  kernels: 
+
+===== layout NHWC =====
+C1 K= 7 C= 768 32x32:   357.91 us/iter  kernels: 
+C2 K= 9 C=1536 32x32:  1077.85 us/iter  kernels: 
+C3 K=31 C= 128 56x56:  2030.99 us/iter  kernels: 
+C4 K=29 C= 256 28x28:  1015.18 us/iter  kernels: 
+C5 K=27 C= 512 14x14:   298.82 us/iter  kernels: 
+C6 K=13 C=1024 7x7:    52.06 us/iter  kernels: 
+
+===== cuDNN on/off invariance (NCHW) =====
+C1: cudnn=on    70.39 us   cudnn=off    70.58 us   ratio 0.997
+C2: cudnn=on   293.74 us   cudnn=off   291.68 us   ratio 1.007
+C3: cudnn=on   414.92 us   cudnn=off   413.99 us   ratio 1.002
+C4: cudnn=on   196.78 us   cudnn=off   196.77 us   ratio 1.000
+C5: cudnn=on    43.68 us   cudnn=off    42.92 us   ratio 1.018
+C6: cudnn=on    12.60 us   cudnn=off    12.45 us   ratio 1.012
