@@ -1,0 +1,177 @@
+torch 2.11.0+cu128 cudnn 91900
+
+====================================================================================================
+===== ConvMixer-1536/20 NCHW fp16 =====
+====================================================================================================
+Loaded pretrained model: 1536_20
+Checkpoint: /home/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_1536_20_ks9_p7.pth.tar
+Channels last mode: False
+Total parameters: 51.63M
+
+--- dynamo.explain ConvMixer-1536/20 NCHW fp16 ---
+  graphs: 1, graph breaks: 0, ops: 396
+
+--- ConvMixer-1536/20 NCHW fp16 EAGER: 249 kernel launches/iter, 12 distinct kernels ---
+  void at::native::(anonymous namespace)::conv_depthwise2d_forward_kernel_generic<c10::Half, int>(torc n/iter=  20.0 us/iter=   1909.8
+  void cutlass::Kernel2<cutlass_80_tensorop_f16_s16816gemm_relu_f16_64x64_32x6_nn_align8>(cutlass_80_t n/iter=  20.0 us/iter=    747.9
+  void at::native::batch_norm_transform_input_kernel<c10::Half, c10::Half, float, true, int>(torch::he n/iter=  41.0 us/iter=    167.4
+  void at::native::vectorized_elementwise_kernel<4, at::native::GeluCUDAKernelImpl(at::TensorIteratorB n/iter=  41.0 us/iter=    117.9
+  void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorB n/iter=  41.0 us/iter=    102.1
+  void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunct n/iter=  21.0 us/iter=     96.7
+  void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::batch_norm_calc n/iter=  41.0 us/iter=     54.6
+  void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<c10::Half>, std::array n/iter=  20.0 us/iter=     54.5
+  _5x_cudnn_ampere_fp16_scudnn_fp16_128x64_relu_xregs_large_nn_v1                                      n/iter=   1.0 us/iter=     21.1
+  std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __half, __half, __half, float n/iter=   1.0 us/iter=      5.4
+  void at::native::reduce_kernel<512, 1, at::native::ReduceOp<c10::Half, at::native::MeanOps<c10::Half n/iter=   1.0 us/iter=      3.3
+  void cask__5x_cudnn::computeOffsetsKernel<false, false>(cask__5x_cudnn::ComputeOffsetsParams)        n/iter=   1.0 us/iter=      1.3
+  conv-related kernels (ConvMixer-1536/20 NCHW fp16 EAGER):
+    void cask__5x_cudnn::computeOffsetsKernel<false, false>(cask__5x_cudnn::ComputeOffsetsParams) n/iter=1.0 us/iter=1.3
+    _5x_cudnn_ampere_fp16_scudnn_fp16_128x64_relu_xregs_large_nn_v1 n/iter=1.0 us/iter=21.1
+    void at::native::(anonymous namespace)::conv_depthwise2d_forward_kernel_generic<c10::Half, int>(torch::headero n/iter=20.0 us/iter=1909.8
+
+--- ConvMixer-1536/20 NCHW fp16 COMPILED(default): 84 kernel launches/iter, 8 distinct kernels ---
+  void at::native::(anonymous namespace)::conv_depthwise2d_forward_kernel_generic<c10::Half, int>(torc n/iter=  20.0 us/iter=   1935.3
+  void cutlass::Kernel2<cutlass_80_tensorop_f16_s16816gemm_relu_f16_64x64_32x6_nn_align8>(cutlass_80_t n/iter=  20.0 us/iter=    764.9
+  triton_poi_fused__native_batch_norm_legit_no_training_convolution_gelu_0                             n/iter=  20.0 us/iter=     99.2
+  triton_poi_fused__native_batch_norm_legit_no_training_add_convolution_gelu_1                         n/iter=  20.0 us/iter=     90.2
+  _5x_cudnn_ampere_fp16_scudnn_fp16_128x64_relu_xregs_large_nn_v1                                      n/iter=   1.0 us/iter=     21.6
+  std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __half, __half, __half, float n/iter=   1.0 us/iter=      5.0
+  triton_per_fused__native_batch_norm_legit_no_training_add_convolution_gelu_mean_2                    n/iter=   1.0 us/iter=      3.8
+  void cask__5x_cudnn::computeOffsetsKernel<false, false>(cask__5x_cudnn::ComputeOffsetsParams)        n/iter=   1.0 us/iter=      1.5
+  conv-related kernels (ConvMixer-1536/20 NCHW fp16 COMPILED(default)):
+    void cask__5x_cudnn::computeOffsetsKernel<false, false>(cask__5x_cudnn::ComputeOffsetsParams) n/iter=1.0 us/iter=1.5
+    _5x_cudnn_ampere_fp16_scudnn_fp16_128x64_relu_xregs_large_nn_v1 n/iter=1.0 us/iter=21.6
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_gelu_0 n/iter=20.0 us/iter=99.2
+    void at::native::(anonymous namespace)::conv_depthwise2d_forward_kernel_generic<c10::Half, int>(torch::headero n/iter=20.0 us/iter=1935.3
+    triton_poi_fused__native_batch_norm_legit_no_training_add_convolution_gelu_1 n/iter=20.0 us/iter=90.2
+    triton_per_fused__native_batch_norm_legit_no_training_add_convolution_gelu_mean_2 n/iter=1.0 us/iter=3.8
+
+--- generated code evidence (ConvMixer-1536/20 NCHW fp16): torch_compile_debug/run_2026_07_22_09_07_32_209248-pid_281554/torchinductor/model__0_inference_0.0/output_code.py ---
+  extern/aten convolution call sites: 212; triton kernel defs: 6
+    L38: # Topologically Sorted Source Nodes: [input_1, input_2, input_3], Original ATen: [aten.convolution, aten.gelu, aten._native_batch_norm_legit_no_training]
+    L51: #   %convolution : Tensor "f16[1, 1536, 32, 32][1572864, 1024, 32, 1]cuda:0"[num_users=1] = call_function[target=torch.ops.aten.convolution.default](args = (%ar
+    L141: # Topologically Sorted Source Nodes: [input_4, input_5, input_6, input_7, input_8], Original ATen: [aten.convolution, aten.gelu, aten._native_batch_norm_legit_n
+    L157: #   %convolution_1 : Tensor "f16[1, 1536, 32, 32][1572864, 1024, 32, 1]cuda:0"[num_users=1] = call_function[target=torch.ops.aten.convolution.default](args = (%
+    L185: #   %convolution_2 : Tensor "f16[1, 1536, 32, 32][1572864, 1024, 32, 1]cuda:0"[num_users=1] = call_function[target=torch.ops.aten.convolution.default](args = (%
+    L251: # Topologically Sorted Source Nodes: [input_139, input_140, input_141, input_142, input_143, input_144], Original ATen: [aten._native_batch_norm_legit_no_traini
+    L270: #   %convolution_40 : Tensor "f16[1, 1536, 32, 32][1572864, 1024, 32, 1]cuda:0"[num_users=1] = call_function[target=torch.ops.aten.convolution.default](args = (
+    L643: # Topologically Sorted Source Nodes: [input_1], Original ATen: [aten.convolution]
+
+>>> ConvMixer-1536/20 NCHW fp16 SUMMARY: eager 249 launches/iter -> compiled 84 launches/iter
+
+====================================================================================================
+===== RepLKNet-31B NCHW fp16 =====
+====================================================================================================
+drop path: Identity()
+drop path: DropPath(drop_prob=0.013)
+drop path: DropPath(drop_prob=0.026)
+drop path: DropPath(drop_prob=0.039)
+drop path: DropPath(drop_prob=0.052)
+drop path: DropPath(drop_prob=0.065)
+drop path: DropPath(drop_prob=0.078)
+drop path: DropPath(drop_prob=0.091)
+drop path: DropPath(drop_prob=0.104)
+drop path: DropPath(drop_prob=0.117)
+drop path: DropPath(drop_prob=0.130)
+drop path: DropPath(drop_prob=0.143)
+drop path: DropPath(drop_prob=0.157)
+drop path: DropPath(drop_prob=0.170)
+drop path: DropPath(drop_prob=0.183)
+drop path: DropPath(drop_prob=0.196)
+drop path: DropPath(drop_prob=0.209)
+drop path: DropPath(drop_prob=0.222)
+drop path: DropPath(drop_prob=0.235)
+drop path: DropPath(drop_prob=0.248)
+drop path: DropPath(drop_prob=0.261)
+drop path: DropPath(drop_prob=0.274)
+drop path: DropPath(drop_prob=0.287)
+drop path: DropPath(drop_prob=0.300)
+
+--- dynamo.explain RepLKNet-31B NCHW fp16 ---
+  graphs: 1, graph breaks: 0, ops: 1197
+
+--- RepLKNet-31B NCHW fp16 EAGER: 748 kernel launches/iter, 24 distinct kernels ---
+  void at::native::(anonymous namespace)::conv_depthwise2d_forward_kernel_generic<c10::Half, int>(torc n/iter=  24.0 us/iter=    776.4
+  void at::native::batch_norm_transform_input_kernel<c10::Half, c10::Half, float, true, int>(torch::he n/iter= 155.0 us/iter=    364.3
+  void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorB n/iter= 155.0 us/iter=    341.1
+  void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::batch_norm_calc n/iter= 155.0 us/iter=    195.0
+  void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_32x32_128x2_nn_align2>(cutlass_80 n/iter=  37.0 us/iter=    192.7
+  void cutlass::Kernel2<cutlass_80_tensorop_f16_s16816gemm_f16_64x64_64x6_nn_align2>(cutlass_80_tensor n/iter=  18.0 us/iter=    137.4
+  void cutlass::Kernel2<cutlass_80_tensorop_f16_s16816gemm_f16_128x64_64x3_nn_align2>(cutlass_80_tenso n/iter=  18.0 us/iter=    119.0
+  void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::launch_clamp_sc n/iter=  58.0 us/iter=     73.6
+  void cutlass::Kernel2<cutlass_75_wmma_tensorop_f16_s161616gemm_f16_32x32_128x2_nn_align1>(cutlass_75 n/iter=   6.0 us/iter=     68.9
+  void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<c10::Half>, std::array n/iter=  48.0 us/iter=     56.0
+  void at::native::vectorized_elementwise_kernel<4, at::native::GeluCUDAKernelImpl(at::TensorIteratorB n/iter=  24.0 us/iter=     41.4
+  void cublasLt::splitKreduce_kernel<32, 16, int, __half, __half, float, __half, false, __half, __half n/iter=  20.0 us/iter=     37.2
+  void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_32x32_64x2_nn_align8>(cutlass_80_ n/iter=   7.0 us/iter=     33.6
+  void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_32x32_32x1_nn_align8>(cutlass_80_ n/iter=   7.0 us/iter=     33.5
+  void cutlass::Kernel2<cutlass_75_tensorop_f16_s1688gemm_f16_64x64_nn_align1>(cutlass_75_tensorop_f16 n/iter=   2.0 us/iter=     26.8
+  conv-related kernels (RepLKNet-31B NCHW fp16 EAGER):
+    void cask__5x_cudnn::computeOffsetsKernel<false, false>(cask__5x_cudnn::ComputeOffsetsParams) n/iter=1.0 us/iter=1.3
+    _5x_cudnn_ampere_fp16_scudnn_fp16_128x32_relu_small_nn_v1 n/iter=1.0 us/iter=9.1
+    conv2d_c1_k1_nchw_shmem_tiling n/iter=2.0 us/iter=9.5
+    void cudnn::cnn::conv2d_grouped_direct_kernel<false, true, false, false, false, false, 1, 3, int, float, __hal n/iter=3.0 us/iter=9.4
+    void at::native::(anonymous namespace)::conv_depthwise2d_forward_kernel_generic<c10::Half, int>(torch::headero n/iter=24.0 us/iter=776.4
+
+--- RepLKNet-31B NCHW fp16 COMPILED(default): 282 kernel launches/iter, 45 distinct kernels ---
+  void at::native::(anonymous namespace)::conv_depthwise2d_forward_kernel_generic<c10::Half, int>(torc n/iter=  24.0 us/iter=    697.4
+  void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_32x32_128x2_nn_align2>(cutlass_80 n/iter=  37.0 us/iter=    173.3
+  void cutlass::Kernel2<cutlass_80_tensorop_f16_s16816gemm_f16_64x64_64x6_nn_align2>(cutlass_80_tensor n/iter=  18.0 us/iter=    121.4
+  void cutlass::Kernel2<cutlass_80_tensorop_f16_s16816gemm_f16_128x64_64x3_nn_align2>(cutlass_80_tenso n/iter=  18.0 us/iter=    106.7
+  void cutlass::Kernel2<cutlass_75_wmma_tensorop_f16_s161616gemm_f16_32x32_128x2_nn_align1>(cutlass_75 n/iter=   6.0 us/iter=     63.1
+  triton_poi_fused__native_batch_norm_legit_no_training_add_convolution_18                             n/iter=  35.0 us/iter=     52.7
+  void cublasLt::splitKreduce_kernel<32, 16, int, __half, __half, float, __half, false, __half, __half n/iter=  20.0 us/iter=     34.0
+  triton_poi_fused__native_batch_norm_legit_no_training_convolution_gelu_19                            n/iter=  18.0 us/iter=     32.6
+  void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_32x32_64x2_nn_align8>(cutlass_80_ n/iter=   7.0 us/iter=     30.3
+  void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_32x32_32x1_nn_align8>(cutlass_80_ n/iter=   7.0 us/iter=     30.0
+  void cutlass::Kernel2<cutlass_75_tensorop_f16_s1688gemm_f16_64x64_nn_align1>(cutlass_75_tensorop_f16 n/iter=   2.0 us/iter=     26.2
+  triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_16                            n/iter=  18.0 us/iter=     21.8
+  triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_17                            n/iter=  18.0 us/iter=     18.9
+  void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_32x32_128x2_nn_align8>(cutlass_80 n/iter=   2.0 us/iter=     15.8
+  ampere_fp16_s16816gemm_fp16_128x64_ldg8_f2f_stages_32x6_nn                                           n/iter=   2.0 us/iter=      9.2
+  conv-related kernels (RepLKNet-31B NCHW fp16 COMPILED(default)):
+    _5x_cudnn_ampere_fp16_scudnn_fp16_128x32_relu_small_nn_v1 n/iter=1.0 us/iter=8.1
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_0 n/iter=3.0 us/iter=8.5
+    conv2d_c1_k1_nchw_shmem_tiling n/iter=2.0 us/iter=8.5
+    void cudnn::cnn::conv2d_grouped_direct_kernel<false, true, false, false, false, false, 1, 3, int, float, __hal n/iter=3.0 us/iter=8.5
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_1 n/iter=1.0 us/iter=1.9
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_2 n/iter=2.0 us/iter=3.0
+    void at::native::(anonymous namespace)::conv_depthwise2d_forward_kernel_generic<c10::Half, int>(torch::headero n/iter=24.0 us/iter=697.4
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_3 n/iter=2.0 us/iter=2.8
+    triton_poi_fused__native_batch_norm_legit_no_training_add_convolution_4 n/iter=3.0 us/iter=6.2
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_gelu_5 n/iter=2.0 us/iter=8.3
+    triton_poi_fused__native_batch_norm_legit_no_training_add_convolution_6 n/iter=1.0 us/iter=1.6
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_7 n/iter=1.0 us/iter=1.9
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_8 n/iter=1.0 us/iter=1.4
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_9 n/iter=2.0 us/iter=2.4
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_10 n/iter=2.0 us/iter=2.3
+    triton_poi_fused__native_batch_norm_legit_no_training_add_convolution_11 n/iter=3.0 us/iter=4.3
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_gelu_12 n/iter=2.0 us/iter=5.1
+    triton_poi_fused__native_batch_norm_legit_no_training_add_convolution_13 n/iter=1.0 us/iter=1.3
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_14 n/iter=1.0 us/iter=1.4
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_15 n/iter=1.0 us/iter=1.4
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_16 n/iter=18.0 us/iter=21.8
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_17 n/iter=18.0 us/iter=18.9
+    triton_poi_fused__native_batch_norm_legit_no_training_add_convolution_18 n/iter=35.0 us/iter=52.7
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_gelu_19 n/iter=18.0 us/iter=32.6
+    triton_poi_fused__native_batch_norm_legit_no_training_add_convolution_20 n/iter=1.0 us/iter=1.2
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_21 n/iter=1.0 us/iter=1.2
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_22 n/iter=1.0 us/iter=1.4
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_23 n/iter=2.0 us/iter=2.9
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_relu_24 n/iter=2.0 us/iter=2.1
+    triton_poi_fused__native_batch_norm_legit_no_training_add_convolution_25 n/iter=3.0 us/iter=4.7
+    triton_poi_fused__native_batch_norm_legit_no_training_convolution_gelu_26 n/iter=2.0 us/iter=3.7
+    void cask__5x_cudnn::computeOffsetsKernel<false, false>(cask__5x_cudnn::ComputeOffsetsParams) n/iter=0.9 us/iter=1.0
+
+--- generated code evidence (RepLKNet-31B NCHW fp16): torch_compile_debug/run_2026_07_22_09_07_32_209248-pid_281554/torchinductor/model__1_inference_1.1/output_code.py ---
+  extern/aten convolution call sites: 707; triton kernel defs: 56
+    L38: # Topologically Sorted Source Nodes: [input_2, input_3, input_4], Original ATen: [aten._native_batch_norm_legit_no_training, aten.relu, aten.convolution]
+    L69: #   %convolution_1 : Tensor "f16[1, 128, 112, 112][1605632, 12544, 112, 1]cuda:0"[num_users=1] = call_function[target=torch.ops.aten.convolution.default](args =
+    L124: # Topologically Sorted Source Nodes: [input_11, input_12, out, input_13], Original ATen: [aten._native_batch_norm_legit_no_training, aten.relu, aten.convolution
+    L180: #   %convolution_4 : Tensor "f16[1, 128, 56, 56][401408, 3136, 56, 1]cuda:0"[num_users=1] = call_function[target=torch.ops.aten.convolution.default](args = (%co
+    L254: # Topologically Sorted Source Nodes: [input_14, input_15, out_1], Original ATen: [aten._native_batch_norm_legit_no_training, aten.relu, aten.convolution]
+    L285: #   %convolution_5 : Tensor "f16[1, 128, 56, 56][401408, 3136, 56, 1]cuda:0"[num_users=1] = call_function[target=torch.ops.aten.convolution.default](args = (%re
+    L340: # Topologically Sorted Source Nodes: [input_14, input_15, out_1, out_2, input_16], Original ATen: [aten._native_batch_norm_legit_no_training, aten.relu, aten.co
+    L370: #   %convolution_5 : Tensor "f16[1, 128, 56, 56][401408, 3136, 56, 1]cuda:0"[num_users=1] = call_function[target=torch.ops.aten.convolution.default](args = (%re
+
+>>> RepLKNet-31B NCHW fp16 SUMMARY: eager 748 launches/iter -> compiled 282 launches/iter
