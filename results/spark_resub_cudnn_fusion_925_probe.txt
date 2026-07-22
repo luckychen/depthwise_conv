@@ -1,0 +1,7 @@
+cuDNN Frontend warning: Multiple libcudart libraries found: libcudart.so.12 and libcudart.so.13. Using libcudart.so.12. Set CUDNN_FRONTEND_CUDART_LIB_NAME to select one explicitly.
+frontend: 1.26.0 backend: 9.19.0
+candidates: 3
+plan 0: BUILD FAILED: CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor FailedEncountered runtime kernel compilation failure at: compilationResult != NVRTC_SUCCESS cudnn_status: CUDNN_STATUS_INTERNAL_ERROR_
+plan 1: BUILD FAILED: CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor FailedEncountered runtime kernel compilation failure at: compilationResult != NVRTC_SUCCESS cudnn_status: CUDNN_STATUS_INTERNAL_ERROR_
+plan 2: BUILD FAILED: CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor FailedEncountered runtime kernel compilation failure at: compilationResult != NVRTC_SUCCESS cudnn_status: CUDNN_STATUS_INTERNAL_ERROR_
+NO PLAN BUILT — 9.25 does not fix the GB10 fusion failure
