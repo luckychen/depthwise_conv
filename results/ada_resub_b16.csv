@@ -1,0 +1,9 @@
+model,impl,batch,latency_ms,throughput_img_s,vs_cudnn
+768_32,CuDNN_eager,16,12.82,1247.8,1.00
+768_32,CuDNN_compile,16,9.50,1685.0,1.35
+768_32,Custom_eager,16,14.90,1074.1,0.86
+768_32,Custom_compile,16,11.75,1361.4,1.09
+1536_20,CuDNN_eager,16,150.68,106.2,1.00
+1536_20,CuDNN_compile,16,148.24,107.9,1.02
+1536_20,Custom_eager,16,37.80,423.3,3.99
+1536_20,Custom_compile,16,35.14,455.4,4.29
