@@ -1,0 +1,7 @@
+config,channels,kernel_size,spatial,nchw_ms,nhwc_ms,best_layout,ratio
+ConvMixer 9x9/1536ch/32x32,1536,9,32x32,0.294,1.077,NCHW,3.66
+ConvMixer 7x7/768ch/32x32,768,7,32x32,0.071,0.048,NHWC,1.48
+RepLKNet 31x31/128ch/56x56,128,31,56x56,0.417,2.024,NCHW,4.86
+RepLKNet 29x29/256ch/28x28,256,29,28x28,0.198,1.029,NCHW,5.19
+RepLKNet 27x27/512ch/14x14,512,27,14x14,0.043,0.299,NCHW,7.03
+RepLKNet 13x13/1024ch/7x7,1024,13,7x7,0.012,0.052,NCHW,4.18

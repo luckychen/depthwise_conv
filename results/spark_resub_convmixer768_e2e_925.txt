@@ -1,0 +1,64 @@
+======================================================================
+ConvMixer-768_32 Benchmark
+======================================================================
+Device: NVIDIA GB10
+PyTorch: 2.11.0+cu128, CuDNN: 92500
+Batch size: 1, FP16 channels_last, fp16_method=model_half
+
+  Loading 768_32 CuDNN (eager)...
+Loaded pretrained model: 768_32
+Checkpoint: /home/ava/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: True
+Total parameters: 21.11M
+  Loading 768_32 CuDNN (compile)...
+Loaded pretrained model: 768_32
+Checkpoint: /home/ava/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: True
+Total parameters: 21.11M
+  Loading 768_32 Custom (eager)...
+Loaded pretrained model: 768_32
+Checkpoint: /home/ava/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: True
+Total parameters: 21.11M
+W0722 10:20:55.914000 830359 site-packages/torch/_inductor/utils.py:1731] [0/0] Not enough SMs to use max_autotune_gemm mode
+✓ Custom depthwise kernels loaded successfully (torch.library)
+  Loading 768_32 Custom (compile)...
+Loaded pretrained model: 768_32
+Checkpoint: /home/ava/chenchon/chConv/paper/latex/repo/convmixer/checkpoints/convmixer_768_32_ks7_p7_relu.pth.tar
+Channels last mode: True
+Total parameters: 21.11M
+
+======================================================================
+LATENCY BENCHMARK
+======================================================================
+
+  CuDNN eager:
+    Latency:    4.04 ms
+    Throughput: 247.5 img/s
+
+  CuDNN + compile:
+    Latency:    2.66 ms
+    Throughput: 376.3 img/s
+
+  Custom eager:
+    Latency:    3.19 ms
+    Throughput: 313.9 img/s
+
+  Custom + compile:
+    Latency:    1.87 ms
+    Throughput: 535.0 img/s
+
+======================================================================
+SUMMARY
+======================================================================
+
+Configuration                          Latency   Throughput   vs CuDNN
+----------------------------------------------------------------------
+CuDNN eager                             4.04 ms     247.5 img/s      1.00x
+CuDNN + compile                         2.66 ms     376.3 img/s      1.52x
+Custom eager                            3.19 ms     313.9 img/s      1.27x
+Custom + compile                        1.87 ms     535.0 img/s      2.16x
+
+======================================================================
+DONE
+======================================================================
