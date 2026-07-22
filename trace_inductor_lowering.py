@@ -19,6 +19,7 @@ from torch.profiler import ProfilerActivity, profile
 _REPO = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_REPO, "convmixer"))
 sys.path.insert(0, os.path.join(_REPO, "replknet"))
+sys.path.insert(0, os.path.join(_REPO, "replknet", "RepLKNet-pytorch"))
 
 device = "cuda"
 PROFILE_ITERS = 10
@@ -105,11 +106,24 @@ def build_convmixer():
 
 
 def build_replknet():
-    from benchmark_replknet_nhwc_fp16 import load_model
-    m = load_model(device)
-    m = m.to(dtype=torch.float16).eval()
-    x = torch.randn(1, 3, 224, 224, device=device, dtype=torch.float16)
-    return m, x
+    from replknet import create_RepLKNet31B
+    CHECKPOINT = os.path.join(_REPO, "replknet", "RepLKNet-31B_ImageNet-1K_224.pth")
+    model = create_RepLKNet31B(drop_path_rate=0.3, num_classes=1000,
+                                use_checkpoint=False, small_kernel_merged=False)
+    if os.path.exists(CHECKPOINT):
+        sd = torch.load(CHECKPOINT, map_location="cpu")
+        if "state_dict" in sd:
+            sd = sd["state_dict"]
+        elif "model" in sd:
+            sd = sd["model"]
+        sd = {k.replace("module.", ""): v for k, v in sd.items()}
+        model.load_state_dict(sd, strict=False)
+    model.structural_reparam()
+    model.deep_fuse_BN()
+    model.eval()
+    model = model.to(device).half().to(memory_format=torch.contiguous_format)
+    x = torch.randn(1, 3, 224, 224, device=device, dtype=torch.float16).contiguous()
+    return model, x
 
 
 print(f"torch {torch.__version__} cudnn {torch.backends.cudnn.version()}")
