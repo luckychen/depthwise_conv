@@ -1,0 +1,58 @@
+E3 stride evidence — Inductor's layout optimization puts the depthwise conv on channels-last operands
+Source: torch_compile_debug/run_2026_07_22_09_10_12_905831-pid_282421/torchinductor/model__0_inference_0.0/output_code.py
+Model: ConvMixer-1536/20, NCHW-contiguous input/checkpoint, torch.compile(mode="default"), fp16, B=1.
+(Regenerated with a fresh Inductor cache — TORCHINDUCTOR_CACHE_DIR=/tmp/inductor_fresh_cache, TORCHINDUCTOR_FX_GRAPH_CACHE=0 —
+ to force output_code.py to materialize; same mechanism as the original run, verified by identical launch counts.)
+
+--- The depthwise conv call site (source-level comment identifies it as the model's Conv2d(1536,1536,9,groups=1536)) ---
+
+    # Topologically Sorted Source Nodes: [input_3, input_4], Original ATen: [aten._native_batch_norm_legit_no_training, aten.convolution]
+    # [Provenance debug handles] extern_kernels.convolution:5
+    buf5 = extern_kernels.convolution(buf4, arg7_1, stride=(1, 1), padding=(4, 4), dilation=(1, 1),
+                                       transposed=False, output_padding=(0, 0), groups=1536, bias=None)
+    assert_size_stride(buf5, (1, 1536, 32, 32), (1572864, 1, 49152, 1536), 'torch.ops.aten.convolution.default')
+
+--- Stride interpretation ---
+
+Shape (N=1, C=1536, H=32, W=32). Declared strides (1572864, 1, 49152, 1536) map to dims (N, C, H, W):
+  stride_N = 1572864 = C*H*W  (whole-tensor stride, as expected)
+  stride_C = 1                <-- channel is the FASTEST-varying dimension
+  stride_H = 49152 = W*C
+  stride_W = 1536 = C
+
+This is exactly the channels-last (NHWC) stride pattern: element (n,c,h,w) sits at offset
+n*1572864 + h*49152 + w*1536 + c*1  — physical layout is [N,H,W,C].
+A genuine NCHW-contiguous tensor of this shape would instead show strides (1572864, 1024, 32, 1)
+(stride_C = H*W = 1024, stride_W = 1) — this is what the FX-graph-level "Original ATen" comment
+lines show earlier in the same file (e.g. line 43: "f16[1, 1536, 32, 32][1572864, 1024, 32, 1]"),
+because those comments describe the pre-lowering graph's *logical* shape annotation, not the
+buffer layout Inductor actually allocates at codegen time. The buf4 operand feeding `buf5 =
+extern_kernels.convolution(buf4, ...)` was itself produced, one Triton kernel earlier
+(triton_poi_fused__native_batch_norm_legit_no_training_convolution_gelu_2), in this same
+channels-last layout — i.e. Inductor's layout-optimization pass chose channels-last for the
+producer of the depthwise conv's input specifically so the surrounding pointwise/BN/GELU Triton
+kernels vectorize efficiently across the fastest-varying C dimension, and the extern depthwise
+`aten.convolution` call simply receives whatever layout its input tensor already has.
+
+--- Why this matters for E3 ---
+
+`extern_kernels.convolution` here is a literal call into ATen's convolution dispatcher — the exact
+same dispatcher probed in results.md §2.6. Per §2.6, ATen's dispatcher routes:
+  contiguous (NCHW) fp16 depthwise conv -> at::native::conv_depthwise2d_forward_kernel_generic (ATen native)
+  channels_last (NHWC) fp16 depthwise conv -> cuDNN (per E1/E1b, weak engine catalog at K>=9)
+Because Inductor's layout optimization hands this call a channels-last buffer, the SAME dispatch
+rule that governs eager mode fires here too, and the depthwise conv is routed to cuDNN's NHWC path
+-- which is the K=9 engine-catalog gap E1 quantified (cuDNN-NHWC exhaustive-best 361.7us vs
+ATen-native 88.9us at this exact shape). This is confirmed directly by the companion experiment
+results/ada_resub_inductor_trace_nolayoutopt.txt: with layout optimization disabled
+(TORCHINDUCTOR_LAYOUT_OPTIMIZATION=0), the compiled depthwise conv again shows
+at::native::conv_depthwise2d_forward_kernel_generic at eager-equivalent latency
+(1935.3 us/iter compiled vs 1888-1910 us/iter eager), with no cuDNN kernel present.
+
+Conclusion: "torch.compile decomposes the cuDNN kernel into hundreds of launches" is not what
+happens. What happens is: Inductor's layout optimizer assigns channels-last layout to the tensor
+feeding the depthwise conv (profitable for the surrounding pointwise ops); the extern
+`aten.convolution` call on that channels-last tensor is dispatched by ATen to cuDNN, whose NHWC
+engine catalog is weak at K>=9 (an independently-measured cuDNN limitation, not a PyTorch
+integration artifact). Disabling the layout optimization removes the effect entirely, which is the
+causal proof that layout choice -- not kernel decomposition -- is the mechanism.
