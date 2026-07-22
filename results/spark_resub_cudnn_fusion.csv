@@ -1,0 +1,7 @@
+config,K,C,H,W,layout,unfused_conv_us,unfused_conv_error,fused_bias_gelu_us,fused_bias_gelu_error,fused_scale_shift_us,fused_scale_shift_error,cudnn_version,frontend_version
+C1,7,768,32,32,NHWC,362.427,,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,9.19.0,1.26.0
+C2,9,1536,32,32,NHWC,1081.764,,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,9.19.0,1.26.0
+C3,31,128,56,56,NHWC,17718.348,,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,9.19.0,1.26.0
+C4,29,256,28,28,NHWC,4203.748,,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,9.19.0,1.26.0
+C5,27,512,14,14,NHWC,618.719,,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,9.19.0,1.26.0
+C6,13,1024,7,7,NHWC,53.057,,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,,SUPPORT: [cudnn_frontend] Error: No valid execution plans built.,9.19.0,1.26.0
