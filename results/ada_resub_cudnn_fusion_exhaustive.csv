@@ -1,0 +1,3 @@
+config,K,C,H,W,heuristic_engine,heuristic_us,best_engine,best_us,n_plans,cudnn_version,frontend_version,error
+C1,7,768,32,32,8,14.303,8,14.240,3,9.19.0,1.26.0,
+C2,9,1536,32,32,8,55.013,8,54.872,3,9.19.0,1.26.0,
