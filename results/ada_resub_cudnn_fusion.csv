@@ -1,0 +1,7 @@
+config,K,C,H,W,layout,unfused_conv_us,unfused_conv_error,fused_bias_gelu_us,fused_bias_gelu_error,fused_scale_shift_us,fused_scale_shift_error,cudnn_version,frontend_version
+C1,7,768,32,32,NHWC,20.388,,14.326,,14.007,,9.19.0,1.26.0
+C2,9,1536,32,32,NHWC,373.591,,51.410,,49.561,,9.19.0,1.26.0
+C3,31,128,56,56,NHWC,972.273,,206.484,,206.598,,9.19.0,1.26.0
+C4,29,256,28,28,NHWC,388.823,,204.221,,204.428,,9.19.0,1.26.0
+C5,27,512,14,14,NHWC,92.077,,136.176,,136.228,,9.19.0,1.26.0
+C6,13,1024,7,7,NHWC,23.609,,32.829,,32.691,,9.19.0,1.26.0
