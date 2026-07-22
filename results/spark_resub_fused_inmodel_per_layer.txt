@@ -1,0 +1,27 @@
+torch 2.11.0+cu128  cudnn 92500
+correctness: max abs diff=0.00391  rel=0.00215
+n_blocks=20
+block                                     in-model (ms)
+model.3.0.fn                                     0.2300
+model.4.0.fn                                     0.2322
+model.5.0.fn                                     0.3094
+model.6.0.fn                                     0.3080
+model.7.0.fn                                     0.3081
+model.8.0.fn                                     0.3073
+model.9.0.fn                                     0.3088
+model.10.0.fn                                    0.3072
+model.11.0.fn                                    0.3074
+model.12.0.fn                                    0.3076
+model.13.0.fn                                    0.3081
+model.14.0.fn                                    0.3087
+model.15.0.fn                                    0.3081
+model.16.0.fn                                    0.3081
+model.17.0.fn                                    0.3093
+model.18.0.fn                                    0.3083
+model.19.0.fn                                    0.3081
+model.20.0.fn                                    0.3072
+model.21.0.fn                                    0.3072
+model.22.0.fn                                    0.3075
+
+Total in-model fused DW+act+BN: 6.006 ms
+Mean per-layer (in-model): 300.3 us
