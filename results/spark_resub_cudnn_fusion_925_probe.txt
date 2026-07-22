@@ -1,7 +1,10 @@
 cuDNN Frontend warning: Multiple libcudart libraries found: libcudart.so.12 and libcudart.so.13. Using libcudart.so.12. Set CUDNN_FRONTEND_CUDART_LIB_NAME to select one explicitly.
-frontend: 1.26.0 backend: 9.19.0
+frontend: 1.26.0 backend: 9.25.0
 candidates: 3
-plan 0: BUILD FAILED: CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor FailedEncountered runtime kernel compilation failure at: compilationResult != NVRTC_SUCCESS cudnn_status: CUDNN_STATUS_INTERNAL_ERROR_
-plan 1: BUILD FAILED: CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor FailedEncountered runtime kernel compilation failure at: compilationResult != NVRTC_SUCCESS cudnn_status: CUDNN_STATUS_INTERNAL_ERROR_
-plan 2: BUILD FAILED: CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor FailedEncountered runtime kernel compilation failure at: compilationResult != NVRTC_SUCCESS cudnn_status: CUDNN_STATUS_INTERNAL_ERROR_
-NO PLAN BUILT — 9.25 does not fix the GB10 fusion failure
+plan 0: BUILD OK  name=eng8_k24=0
+plan 1: BUILD OK  name=eng8_k24=0
+plan 2: BUILD OK  name=eng8
+plan 0: EXEC OK  180.20 us
+plan 1: EXEC OK  178.58 us
+plan 2: EXEC OK  178.22 us
+max abs diff vs PyTorch reference: 0.03125
