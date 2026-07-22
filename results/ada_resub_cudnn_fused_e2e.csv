@@ -1,0 +1,3 @@
+model,correctness_rel_err,eager_ref_us,eager_fused_us,ro_fused_us,ro_error
+768_32,0.00492,2342.564,2395.969,997.206,
+1536_20,0.00229,8444.416,2158.008,1955.729,
