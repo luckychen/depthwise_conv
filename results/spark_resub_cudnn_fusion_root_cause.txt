@@ -1,0 +1,21 @@
+E5 GB10 fusion-unsupported root cause (diagnosed 2026-07-22, ava)
+
+Pipeline stage-by-stage for conv+bias+GELU, C2 (K=9,C=1536,32x32), NHWC fp16 on GB10:
+  build_operation_graph(): OK, raw engine_count()=11
+  create_execution_plans([A,B,FALLBACK]): OK, 3 candidates
+  check_support(): OK, all 3 candidates remain (structurally valid for this graph)
+  build_plan_at_index(i) for i in 0,1,2: ALL THREE FAIL with:
+    CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor Failed
+    Encountered runtime kernel compilation failure at: compilationResult != NVRTC_SUCCESS
+    cudnn_status: CUDNN_STATUS_INTERNAL_ERROR_COMPILATION_FAILED
+
+Interpretation: this is NOT a capability/support gap in the traditional sense (the graph
+is structurally valid, and 3 engines claim to support it). It is an NVRTC (runtime JIT
+compilation) FAILURE specific to this platform: cuDNN 9.19's fused-epilogue engines for
+grouped/depthwise conv generate a JIT-compiled kernel source for the fusion, and that
+JIT compilation fails to produce valid device code for GB10 (SM 12.1 / Blackwell).
+Same graph, same script, same cuDNN/frontend version compiles and runs successfully
+on Ada (SM 8.9) -- see results/ada_resub_cudnn_fusion.csv. This points to cuDNN 9.19's
+JIT codegen templates for this fusion pattern not yet correctly targeting SM 12.1 --
+i.e. an immaturity/bug in cuDNN's newest-GPU support for this specific fusion, not an
+architectural impossibility.
