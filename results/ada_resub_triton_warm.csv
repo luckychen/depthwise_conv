@@ -1,0 +1,6 @@
+config,channels,kernel_size,spatial,warmup,timed,max_abs_error,triton_warm_us
+ConvMixer 7x7/768ch/32x32,768,7,32x32,500,500,0.0000,31.064
+ConvMixer 9x9/1536ch/32x32,1536,9,32x32,500,500,0.0000,138.809
+RepLKNet 31x31/128ch/56x56,128,31,56x56,500,500,0.0000,267.243
+RepLKNet 29x29/256ch/28x28,256,29,28x28,500,500,0.0000,124.735
+RepLKNet 27x27/512ch/14x14,512,27,14x14,500,500,0.0000,34.716
